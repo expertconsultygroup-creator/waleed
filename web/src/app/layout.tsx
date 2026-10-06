@@ -12,7 +12,7 @@ const amiri = Amiri_Quran({ subsets: ["arabic", "latin"], weight: "400", variabl
 export const metadata: Metadata = {
   title: "إسناد — Isnad",
   description:
-    "حاور نموذجًا تُطابَق اقتباساته من القرآن والحديث مع مصادر معتمدة قبل أن تراها. Chat with a model whose Qur’an and hadith quotations are checked against pinned sources before you see them.",
+    "حاور مساعدًا تُطابَق اقتباساته من القرآن والحديث مع مصادر معتمدة قبل أن تراها. Chat with an assistant whose Qur’an and hadith quotations are checked against trusted sources before you see them.",
   icons: { icon: "/icon.svg" },
 };
 

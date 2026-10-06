@@ -8,14 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Khatam } from "@/components/brand/ornaments";
 import { regenerate, runVerify } from "@/lib/actions";
-import { describeBase } from "@/lib/api";
 import { describeFailure } from "@/lib/describe";
 import { useT, type T } from "@/lib/i18n/use-t";
 import { renderMarkdown } from "@/lib/markdown";
+import { formatReference } from "@/lib/reference";
 import { languageLabel, sourceLabel, statusInfo } from "@/lib/status";
 import { persist, useIsnad } from "@/lib/store";
 import type { Citation, Item, Part } from "@/lib/types";
 import { useUi } from "@/lib/ui";
+import { RefLabel } from "./ref-label";
 import { CheckingCard, FailureCard, ReportCard } from "./report";
 
 function copy(t: T, text: string, okKey = "copy.copied") {
@@ -55,7 +56,7 @@ function plainText(t: T, entry: Item): string {
     if (c.state === "done" && c.report) {
       const ref = c.report.matchedReferences[0] || c.report.citedReference || "";
       const text = c.report.evidence[0]?.source_text ?? "";
-      parts.push(`[${ref || t("citation.kind")}] ${[text, statusInfo(t, c.report.status).label].filter(Boolean).join(" — ")}`);
+      parts.push(`[${ref ? formatReference(t, ref) : t("citation.kind")}] ${[text, statusInfo(t, c.report.status).label].filter(Boolean).join(" — ")}`);
     } else if (c.state === "error" && c.error) {
       parts.push(t("citation.notCheckedPlain", { title: describeFailure(t, c.error).title }));
     }
@@ -63,11 +64,11 @@ function plainText(t: T, entry: Item): string {
   return parts.join("\n\n").trim();
 }
 
-function statsLine(t: T, entry: Item): string {
+function statsLine(t: T, entry: Item, admin: boolean): string {
   const d = entry.statsData;
   if (!d) return entry.stats ?? "";
   return [
-    t.duration(d.elapsedMs),
+    admin ? t.duration(d.elapsedMs) : "",
     t("msg.statsChecked", { n: d.checked || 0 }),
     d.failed ? t("msg.statsFailed", { n: d.failed }) : "",
     d.stopped ? t("msg.statsStopped") : "",
@@ -95,11 +96,12 @@ function CitationSlot({ citation }: { citation: Citation }) {
 function Meta({ who, entry }: { who: string; entry: Item }) {
   const t = useT();
   const showTime = useIsnad((s) => s.settings.showTimestamps);
+  const admin = useUi((s) => s.admin);
   return (
     <div className="flex items-baseline gap-2.5 text-xs text-muted-foreground">
       <span className="font-semibold text-foreground">{who}</span>
       {showTime && entry.createdAt ? <time dateTime={new Date(entry.createdAt).toISOString()}>{t.time(entry.createdAt)}</time> : null}
-      {entry.model && entry.kind === "assistant" ? <span className="ref truncate">{entry.model}</span> : null}
+      {admin && entry.model && entry.kind === "assistant" ? <span className="ref truncate">{entry.model}</span> : null}
     </div>
   );
 }
@@ -138,6 +140,7 @@ function AssistantMessage({ entry, chatId }: { entry: Item; chatId: string }) {
   const t = useT();
   const running = useIsnad((s) => s.running.active);
   const setPromptOpen = useUi((s) => s.setPromptOpen);
+  const admin = useUi((s) => s.admin);
   const parts = partsOf(entry);
   const citations = entry.citations ?? [];
   const streaming = entry.kind === "pending" || entry.kind === "streaming";
@@ -185,7 +188,7 @@ function AssistantMessage({ entry, chatId }: { entry: Item; chatId: string }) {
         </div>
         {entry.kind === "error" && entry.error ? <FailureCard failure={entry.error} /> : null}
         {entry.kind === "assistant" && (entry.statsData || entry.stats) ? (
-          <p className="text-xs text-muted-foreground">{statsLine(t, entry)}</p>
+          <p className="text-xs text-muted-foreground">{statsLine(t, entry, admin)}</p>
         ) : null}
         {!streaming ? (
           <div className="-ms-2 flex flex-wrap opacity-0 transition-opacity group-focus-within/msg:opacity-100 group-hover/msg:opacity-100 [@media(pointer:coarse)]:opacity-100">
@@ -201,9 +204,11 @@ function AssistantMessage({ entry, chatId }: { entry: Item; chatId: string }) {
             <Action label={t("msg.poor")} onClick={() => feedback("down")} pressed={entry.feedback === "down"}>
               <ThumbsDown className="size-4" />
             </Action>
-            <Action label={t("msg.prompt")} onClick={() => setPromptOpen(true)}>
-              <Info className="size-4" />
-            </Action>
+            {admin ? (
+              <Action label={t("msg.prompt")} onClick={() => setPromptOpen(true)}>
+                <Info className="size-4" />
+              </Action>
+            ) : null}
             <Action label={t("msg.remove")} onClick={() => useIsnad.getState().removeItem(chatId, entry.id)}>
               <Trash2 className="size-4" />
             </Action>
@@ -228,7 +233,7 @@ function ToolItem({ entry, chatId }: { entry: Item; chatId: string }) {
           <p className="mt-2 flex flex-wrap gap-1.5 text-xs">
             <span className="rounded-full bg-card/70 px-2 py-0.5">{sourceLabel(t, r.source_type)}</span>
             <span className="rounded-full bg-card/70 px-2 py-0.5">{languageLabel(t, r.language)}</span>
-            {r.reference ? <bdi className="ref rounded-full bg-card/70 px-2 py-0.5 font-semibold">{r.reference}</bdi> : null}
+            {r.reference ? <RefLabel reference={r.reference} className="rounded-full bg-card/70 px-2 py-0.5 font-semibold" /> : null}
           </p>
         </div>
       </div>
@@ -241,7 +246,7 @@ function ToolItem({ entry, chatId }: { entry: Item; chatId: string }) {
       </span>
       <div className="min-w-0 flex-1 space-y-2">
         <Meta who={t("msg.isnad")} entry={entry} />
-        {entry.kind === "pending" ? <CheckingCard reference={entry.request?.reference} text={t("result.waitingApi", { base: describeBase() })} /> : null}
+        {entry.kind === "pending" ? <CheckingCard reference={entry.request?.reference} text={t("result.waitingApi")} /> : null}
         {entry.kind === "report" && entry.report ? <ReportCard report={entry.report} durationMs={entry.durationMs} /> : null}
         {entry.kind === "error" && entry.error ? (
           <>

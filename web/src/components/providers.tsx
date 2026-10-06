@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { refreshApiState } from "@/lib/actions";
 import { persist, useIsnad } from "@/lib/store";
+import { useUi } from "@/lib/ui";
 
 /* Loads the saved state once, keeps <html> in step with the reader's
    language and theme, and saves changes shortly after they happen. */
@@ -15,6 +16,7 @@ export function Providers({ children }: { children: ReactNode }) {
   const theme = useIsnad((s) => s.theme);
 
   useEffect(() => {
+    useUi.getState().loadAdmin();
     useIsnad.getState().hydrate();
     void refreshApiState();
   }, []);

@@ -1,13 +1,15 @@
 "use client";
 
-import { BookOpen, MessageCircleQuestion, ScrollText, TriangleAlert } from "lucide-react";
+import { BadgeCheck, BookOpen, MessageCircleQuestion, ScrollText, TriangleAlert } from "lucide-react";
 import { cn } from "cn";
 import { Rosette } from "@/components/brand/ornaments";
 import { Seal } from "@/components/brand/seal";
+import { Button } from "@/components/ui/button";
 import { sendMessage } from "@/lib/actions";
 import { useT } from "@/lib/i18n/use-t";
+import { formatReference } from "@/lib/reference";
 import { languageLabel, sourceLabel, STATUS_ORDER, statusInfo, versionText } from "@/lib/status";
-import { modelConfigured, useIsnad } from "@/lib/store";
+import { modelConfigured, persist, useIsnad } from "@/lib/store";
 import { useUi } from "@/lib/ui";
 
 function ApiNotice() {
@@ -29,6 +31,10 @@ export function ChatWelcome() {
   const configured = useIsnad(modelConfigured);
   const capabilities = useIsnad((s) => s.capabilities);
   const openSettings = useUi((s) => s.openSettings);
+  const admin = useUi((s) => s.admin);
+  // Without a model, administrators are sent to connect one; readers are
+  // offered what still works.
+  const chatOff = !configured && !admin;
   const suggestions = capabilities?.chat_prompt_suggestions?.length
     ? capabilities.chat_prompt_suggestions.map((p, i) => ({ ...p, icon: [BookOpen, ScrollText, MessageCircleQuestion][i % 3] }))
     : [
@@ -43,11 +49,23 @@ export function ChatWelcome() {
       <Rosette animate className="pointer-events-none absolute -top-2 left-1/2 -z-0 size-[18rem] -translate-x-1/2 text-gold/25 sm:-top-4 sm:size-[26rem] sm:text-gold/35" />
       <div className="relative">
         <h2 className="empty-title mx-auto max-w-2xl font-heading text-[1.85rem] font-bold leading-[1.35] sm:text-[2.5rem] [:lang(en)_&]:text-[1.7rem] [:lang(en)_&]:sm:text-[2.15rem] [:lang(en)_&]:leading-tight">
-          {configured ? t("welcome.title") : t("welcome.connectTitle")}
+          {configured ? t("welcome.title") : chatOff ? t("chatOff.title") : t("welcome.connectTitle")}
         </h2>
         <p className="mx-auto mt-4 max-w-lg text-[1.02rem] leading-relaxed text-muted-foreground">
-          {configured ? t("empty.chatSub") : t("empty.connectSub")}
+          {configured ? t("empty.chatSub") : chatOff ? t("chatOff.sub") : t("empty.connectSub")}
         </p>
+        {chatOff ? (
+          <Button
+            className="mt-6 h-11 rounded-full px-5 text-[0.95rem] font-semibold"
+            onClick={() => {
+              useIsnad.getState().setMode("verify");
+              persist();
+            }}
+          >
+            <BadgeCheck className="size-[18px]" />
+            {t("mode.verify")}
+          </Button>
+        ) : null}
       </div>
 
       <ol className="relative mt-10 grid w-full gap-3 text-start sm:grid-cols-3 sm:gap-0" aria-label={t("welcome.stepsLabel")}>
@@ -67,7 +85,7 @@ export function ChatWelcome() {
       <div className="relative mt-10 w-full">
         <ApiNotice />
         <h3 className="sr-only">{t("welcome.tryLabel")}</h3>
-        <ul className="mt-3 grid gap-2.5 sm:grid-cols-3">
+        <ul className={cn("mt-3 grid gap-2.5 sm:grid-cols-3", chatOff && "hidden")}>
           {suggestions.map(({ label, text, icon: Icon }) => (
             <li key={text}>
               <button
@@ -93,6 +111,7 @@ export function ChatWelcome() {
 
 export function VerifyWelcome() {
   const t = useT();
+  const admin = useUi((s) => s.admin);
   const capabilities = useIsnad((s) => s.capabilities);
   const apiState = useIsnad((s) => s.apiState);
   return (
@@ -116,14 +135,17 @@ export function VerifyWelcome() {
                   <span className="font-medium" dir="auto">
                     {s.display_name || s.name}
                   </span>
-                  <bdi className="ref shrink-0 text-xs text-muted-foreground">{versionText(s.source_version)}</bdi>
+                  {admin ? <bdi className="ref shrink-0 text-xs text-muted-foreground">{versionText(s.source_version)}</bdi> : null}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {sourceLabel(t, s.source_type)} · {languageLabel(t, s.language)}
                 </p>
-                <p className="mt-2 flex items-center gap-2 text-xs">
+                <p className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                   <span className="text-muted-foreground">{t("verify.formatLabel")}</span>
-                  <bdi className="ref rounded-md bg-muted px-1.5 py-0.5">{s.reference_format}</bdi>
+                  <bdi className="ref rounded-md bg-muted px-1.5 py-0.5">{s.source_type === "hadith" ? "4560" : "2:255"}</bdi>
+                  <span className="text-muted-foreground">
+                    ({s.source_type === "hadith" ? t("verify.exampleHadith") : formatReference(t, "2:255")})
+                  </span>
                 </p>
                 {s.coverage_note ? (
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground" dir="auto">

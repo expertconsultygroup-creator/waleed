@@ -34,6 +34,7 @@ export function Topbar({ view, onMenu }: { view: "chat" | "dashboard"; onMenu: (
   const theme = useIsnad((s) => s.theme);
   const lang = useIsnad((s) => s.lang);
   const openSettings = useUi((s) => s.openSettings);
+  const admin = useUi((s) => s.admin);
 
   const title = view === "dashboard" ? t("dash.title") : chatTitle(t, chat);
 
@@ -94,16 +95,18 @@ export function Topbar({ view, onMenu }: { view: "chat" | "dashboard"; onMenu: (
           <TooltipContent>{t("header.refreshTitle")}</TooltipContent>
         </Tooltip>
 
-        <button
-          type="button"
-          onClick={() => openSettings("model")}
-          className="hidden h-8 max-w-48 items-center gap-2 truncate rounded-full border border-border bg-card px-3 text-xs font-medium text-muted-foreground transition hover:text-foreground md:inline-flex"
-          title={t("header.modelTitle")}
-          id="model-status"
-        >
-          <span className={cn("size-2 shrink-0 rounded-full", configured ? "bg-primary" : "bg-muted-foreground/50")} />
-          <span className="ref truncate">{configured ? modelName : t("model.none")}</span>
-        </button>
+        {admin ? (
+          <button
+            type="button"
+            onClick={() => openSettings("model")}
+            className="hidden h-8 max-w-48 items-center gap-2 truncate rounded-full border border-border bg-card px-3 text-xs font-medium text-muted-foreground transition hover:text-foreground md:inline-flex"
+            title={t("header.modelTitle")}
+            id="model-status"
+          >
+            <span className={cn("size-2 shrink-0 rounded-full", configured ? "bg-primary" : "bg-muted-foreground/50")} />
+            <span className="ref truncate">{configured ? modelName : t("model.none")}</span>
+          </button>
+        ) : null}
 
         {view === "chat" ? (
           <IconAction label={t("header.export")} onClick={exportChat}>

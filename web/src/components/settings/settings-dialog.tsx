@@ -106,6 +106,7 @@ function SettingsForm() {
   const tab = useUi((s) => s.settingsTab);
   const setTab = useUi((s) => s.setSettingsTab);
   const close = useUi((s) => s.closeSettings);
+  const admin = useUi((s) => s.admin);
   const settings = useIsnad((s) => s.settings);
   const theme = useIsnad((s) => s.theme);
   const lang = useIsnad((s) => s.lang);
@@ -178,13 +179,20 @@ function SettingsForm() {
     <>
         <DialogHeader className="px-6 pb-2 pt-6 text-start">
           <DialogTitle className="font-heading text-xl">{t("settings.title")}</DialogTitle>
-          <DialogDescription>{t("settings.intro")}</DialogDescription>
+          <DialogDescription>{admin ? t("settings.introAdmin") : t("settings.intro")}</DialogDescription>
         </DialogHeader>
         <Tabs value={tab} onValueChange={(v) => { setTab(v as SettingsTab); setError(""); }} className="min-h-0 gap-0">
-          <TabsList className="mx-6 mt-2 grid h-10 w-auto grid-cols-3 rounded-xl">
-            <TabsTrigger value="model" className="rounded-lg">{t("settings.tabModel")}</TabsTrigger>
-            <TabsTrigger value="api" className="rounded-lg">{t("settings.tabApi")}</TabsTrigger>
+          {/* Readers see what is theirs to change; the model and the
+              connection are an administrator's. */}
+          <TabsList className={cn("mx-6 mt-2 grid h-10 w-auto rounded-xl", admin ? "grid-cols-4" : "grid-cols-2")}>
             <TabsTrigger value="appearance" className="rounded-lg">{t("settings.tabAppearance")}</TabsTrigger>
+            <TabsTrigger value="data" className="rounded-lg">{t("settings.tabData")}</TabsTrigger>
+            {admin ? (
+              <>
+                <TabsTrigger value="model" className="rounded-lg">{t("settings.tabModel")}</TabsTrigger>
+                <TabsTrigger value="api" className="rounded-lg">{t("settings.tabApi")}</TabsTrigger>
+              </>
+            ) : null}
           </TabsList>
 
           <div className="scrollbar-quiet max-h-[60dvh] overflow-y-auto px-6 py-5">
@@ -253,10 +261,14 @@ function SettingsForm() {
               <p className="text-xs leading-relaxed text-muted-foreground">
                 {t("settings.apiHelp", { paths: "/v1/capabilities, /v1/system-prompt, /health/ready, /v1/verify", env: "ISNAD_CORS_ORIGINS" })}
               </p>
+            </TabsContent>
+
+            <TabsContent value="data" className="grid gap-4" id="panel-data">
+              <p className="text-sm leading-relaxed text-muted-foreground">{t("settings.dataHelp")}</p>
               <Button
                 type="button"
-                variant="ghost"
-                className="justify-self-start text-mismatch hover:bg-mismatch-soft hover:text-mismatch"
+                variant="outline"
+                className="justify-self-start rounded-xl border-mismatch/30 text-mismatch hover:bg-mismatch-soft hover:text-mismatch"
                 onClick={() => {
                   if (!window.confirm(t("settings.confirmClear"))) return;
                   useIsnad.getState().clearHistory();
@@ -330,7 +342,7 @@ function SettingsForm() {
             {error}
           </p>
         ) : null}
-        {tab !== "appearance" ? (
+        {tab === "model" || tab === "api" ? (
           <div className="flex justify-end gap-2 border-t border-border/70 bg-muted/30 px-6 py-4">
             <Button variant="outline" className="h-10 rounded-xl px-4" onClick={close}>
               {t("settings.cancel")}

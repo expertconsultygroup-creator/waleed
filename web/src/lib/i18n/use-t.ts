@@ -25,9 +25,10 @@ export function makeT(f: Formatter): T {
   t.time = (ts) => formatDate(f, ts, { hour: "2-digit", minute: "2-digit" });
   t.duration = (ms) => {
     if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return "";
+    // Readers are told seconds; milliseconds are an engineer's unit.
     return ms >= 1000
       ? translate(f, "duration.s", { n: formatNumber(f, ms / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })
-      : translate(f, "duration.ms", { n: Math.max(1, Math.round(ms)) });
+      : translate(f, "duration.underSecond");
   };
   return t;
 }

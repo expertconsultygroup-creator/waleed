@@ -76,8 +76,11 @@ def test_opens_in_arabic_and_checks_a_quotation_by_hand(server_url, browser) -> 
     source = card.locator(".evidence-text").first
     assert source.get_attribute("lang") == "ar"
     assert len(source.inner_text()) > 10
-    # The reference keeps its digit order inside the Arabic page.
-    assert card.locator("bdi.ref", has_text="1:1").count() >= 1
+    # The reference is named for the reader (Al-Fatihah, ayah 1); the API's
+    # notation stays on the element for anything that needs it.
+    named = card.locator("bdi[data-reference='1:1']").first
+    assert named.inner_text() == "الفاتحة: ١"
+    assert named.get_attribute("dir") == "rtl"
     assert card.locator(".diff-source").count() >= 1
     assert errors == []
     page.close()
@@ -247,9 +250,16 @@ def test_dashboard_summarises_this_devices_history(server_url, browser) -> None:
     page.wait_for_url("**/#m-item-flagged", timeout=10000)
     page.wait_for_selector("#m-item-flagged", timeout=10000)
 
-    # Server statistics are off unless the deployment enables them, and the
-    # page says how to turn them on.
+    # Server statistics are off unless the deployment enables them. Readers are
+    # told to ask an administrator; only an administrator is shown the setting.
     page.goto(server_url + "dashboard/", wait_until="load")
+    page.wait_for_selector(".dash-hero", timeout=20000)
+    page.click('[data-dash-scope="server"]')
+    page.wait_for_selector(".server-note", timeout=10000)
+    note = page.inner_text(".server-note")
+    assert "administrator" in note
+    assert "ISNAD_STATS_ENABLED" not in note
+    page.goto(server_url + "dashboard/?admin=1", wait_until="load")
     page.wait_for_selector(".dash-hero", timeout=20000)
     page.click('[data-dash-scope="server"]')
     page.wait_for_selector(".server-note", timeout=10000)

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { quoteLimit, sendMessage, stopGeneration, submitVerify, validateVerify } from "@/lib/actions";
 import { useT } from "@/lib/i18n/use-t";
+import { toApiReference } from "@/lib/reference";
 import { modelConfigured, persist, useIsnad } from "@/lib/store";
 import { useUi } from "@/lib/ui";
 
@@ -19,6 +20,7 @@ export function Composer() {
   const capabilities = useIsnad((s) => s.capabilities);
   const draft = useUi((s) => s.draft);
   const openSettings = useUi((s) => s.openSettings);
+  const admin = useUi((s) => s.admin);
 
   const [text, setText] = useState("");
   const [source, setSource] = useState("quran");
@@ -48,7 +50,8 @@ export function Composer() {
   }, [text, mode]);
 
   const pair = capabilities?.sources?.find((s) => s.source_type === source && s.language === language);
-  const request = { source_type: source, language, quote: text, reference };
+  // Readers may type a bare hadith number or Arabic-Indic digits.
+  const request = { source_type: source, language, quote: text, reference: toApiReference(source, reference) };
   const problem = verify ? validateVerify(request) : null;
   const canSend = verify ? !problem && !running.active : configured && !!text.trim() && !running.active;
 
@@ -63,7 +66,8 @@ export function Composer() {
       return;
     }
     if (!configured) {
-      openSettings("model");
+      if (admin) openSettings("model");
+      else toast.info(t("chatOff.title"), { description: t("chatOff.sub") });
       return;
     }
     if (await sendMessage(text)) setText("");
@@ -81,7 +85,7 @@ export function Composer() {
         ? t("composer.hintNoAdapter")
         : t("composer.hintDefault")
       : reference.trim()
-        ? t("composer.hintFormat", { format: pair.reference_format })
+        ? t(source === "hadith" ? "composer.hintRefHadith" : "composer.hintRefQuran")
         : t("composer.hintOptional")
     : t("composer.hintChat");
 
@@ -162,7 +166,7 @@ export function Composer() {
                   dir="ltr"
                   spellCheck={false}
                   autoComplete="off"
-                  placeholder={pair?.reference_format?.slice(0, 40) || "2:255"}
+                  placeholder={t(source === "hadith" ? "verify.refPlaceholderHadith" : "verify.refPlaceholderQuran")}
                   className="ref h-10 rounded-xl border border-input bg-raised px-3 text-sm outline-none transition placeholder:text-muted-foreground/70 focus:border-primary/50 focus:ring-3 focus:ring-primary/15 rtl:text-right"
                 />
               </label>

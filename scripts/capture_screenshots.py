@@ -205,7 +205,7 @@ def main() -> int:
                 _wait_ready(settings_page)
                 settings_page.click("aside >> text=الإعدادات")
                 settings_page.wait_for_selector("#settings-dialog")
-                settings_page.click("#settings-dialog [role=tab] >> nth=2")
+                settings_page.click("#settings-dialog [role=tab] >> nth=0")
                 settings_page.wait_for_timeout(300)
                 settings_page.screenshot(path=str(OUTPUT / "05-settings-language.png"))
                 saved.append("05-settings-language.png")

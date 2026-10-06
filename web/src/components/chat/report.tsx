@@ -11,6 +11,8 @@ import { hasKey } from "@/lib/i18n/translate";
 import { renderMarkdown } from "@/lib/markdown";
 import { languageLabel, shortHash, sourceLabel, statusInfo, TONE_BORDER, versionText } from "@/lib/status";
 import type { Evidence, Failure, Report } from "@/lib/types";
+import { useUi } from "@/lib/ui";
+import { RefLabel } from "./ref-label";
 
 /* ------------------------------------------------------------------ pieces */
 
@@ -39,15 +41,17 @@ function SourcePage({ evidence, report }: { evidence: Evidence; report: Report }
         {arabic && report.sourceType === "quran" ? <AyahMark reference={evidence.reference} /> : null}
       </blockquote>
       <figcaption className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <Ref className="font-semibold text-gold-ink">{evidence.reference || t("evidence.unknownRef")}</Ref>
+        {evidence.reference ? (
+          <RefLabel reference={evidence.reference} className="font-semibold text-gold-ink" />
+        ) : (
+          <span className="font-semibold text-gold-ink">{t("evidence.unknownRef")}</span>
+        )}
         {evidence.source_url ? (
           <a href={evidence.source_url} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1 underline-offset-4 hover:underline">
-            {evidence.source_id}
-            <ExternalLink className="size-3" />
+            {t("evidence.openRecord")}
+            <ExternalLink className="size-3 rtl:-scale-x-100" />
           </a>
-        ) : (
-          <span>{evidence.source_id}</span>
-        )}
+        ) : null}
       </figcaption>
       {evidence.matched_fragment && evidence.matched_fragment !== evidence.source_text ? (
         <p className="mt-3 border-t border-mushaf-line pt-3 text-center text-sm text-muted-foreground">
@@ -65,6 +69,7 @@ function SourcePage({ evidence, report }: { evidence: Evidence; report: Report }
    said to be, and the pinned edition that answered. It is a real sequence. */
 function Chain({ report }: { report: Report }) {
   const t = useT();
+  const admin = useUi((s) => s.admin);
   const meta = report.sourceMetadata;
   const matchedElsewhere =
     report.matchedReferences.length > 0 && report.citedReference && !report.matchedReferences.includes(report.citedReference);
@@ -83,15 +88,13 @@ function Chain({ report }: { report: Report }) {
       label: matchedElsewhere ? t("result.matchedRefs") : t("result.citedRef"),
       value: matchedElsewhere ? (
         <span className="flex flex-wrap items-center gap-1.5">
-          <Ref className="text-muted-foreground line-through decoration-mismatch/70">{report.citedReference}</Ref>
+          <RefLabel reference={report.citedReference} className="text-muted-foreground line-through decoration-mismatch/70" />
           {report.matchedReferences.map((r) => (
-            <Ref key={r} className="font-semibold">
-              {r}
-            </Ref>
+            <RefLabel key={r} reference={r} className="font-semibold" />
           ))}
         </span>
       ) : report.citedReference ? (
-        <Ref className="font-semibold">{report.citedReference}</Ref>
+        <RefLabel reference={report.citedReference} className="font-semibold" />
       ) : (
         <span className="text-muted-foreground">{t("result.noRef")}</span>
       ),
@@ -107,7 +110,7 @@ function Chain({ report }: { report: Report }) {
           ) : (
             <span className="truncate">{meta.display_name || meta.name}</span>
           )}
-          {meta.version ? <Ref className="text-muted-foreground">{versionText(meta.version)}</Ref> : null}
+          {admin && meta.version ? <Ref className="text-muted-foreground">{versionText(meta.version)}</Ref> : null}
         </span>
       ) : (
         <span className="text-muted-foreground">{t("result.notReported")}</span>
@@ -178,20 +181,13 @@ function Differences({ report }: { report: Report }) {
 
 function Details({ report, durationMs }: { report: Report; durationMs?: number | null }) {
   const t = useT();
+  const admin = useUi((s) => s.admin);
   const [open, setOpen] = useState(false);
   const meta = report.sourceMetadata;
   const rows: [string, React.ReactNode][] = [];
   if (report.explanation) {
     rows.push([t("msg.statusLine"), <div key="e" className="prose-chat" dangerouslySetInnerHTML={{ __html: renderMarkdown(report.explanation) }} />]);
   }
-  rows.push(["status", <code key="s" className="ref text-xs">{report.status}</code>]);
-  if (meta?.license) rows.push([t("result.source"), <span key="l" dir="auto">{meta.license}</span>]);
-  if (meta?.content_sha256) rows.push(["SHA-256", <Ref key="h" className="text-xs">{shortHash(meta.content_sha256)}</Ref>]);
-  if (meta?.coverage_note) rows.push([t("result.coverage"), <span key="c" dir="auto">{meta.coverage_note}</span>]);
-  if (typeof report.candidateCount === "number" && report.candidateCount > 0) {
-    rows.push(["", <span key="n">{t("result.candidates", { n: report.candidateCount })}{report.evidenceTruncated ? ` · ${t("result.partialCoverage")}` : ""}</span>]);
-  }
-  if (typeof durationMs === "number") rows.push(["", <span key="d">{t.duration(durationMs)}</span>]);
   for (const e of report.evidence) {
     const rec: [string, string | null | undefined][] = [
       ["evidence.recordTitle", e.record_title],
@@ -204,7 +200,20 @@ function Details({ report, durationMs }: { report: Report; durationMs?: number |
     ];
     for (const [key, value] of rec) if (value) rows.push([t(key), <span key={key + e.reference} dir="auto">{value}</span>]);
   }
+  if (meta?.coverage_note) rows.push([t("result.coverage"), <span key="c" dir="auto">{meta.coverage_note}</span>]);
+  if (report.evidenceTruncated) rows.push(["", <span key="p">{t("result.partialCoverage")}</span>]);
+  if (admin) {
+    rows.push(["status", <code key="s" className="ref text-xs">{report.status}</code>]);
+    if (meta?.license) rows.push([t("result.source"), <span key="l" dir="auto">{meta.license}</span>]);
+    if (meta?.content_sha256) rows.push(["SHA-256", <Ref key="h" className="text-xs">{shortHash(meta.content_sha256)}</Ref>]);
+    if (typeof report.candidateCount === "number" && report.candidateCount > 0) {
+      rows.push(["", <span key="n">{t("result.candidates", { n: report.candidateCount })}</span>]);
+    }
+    if (typeof durationMs === "number") rows.push(["", <span key="d">{t.duration(durationMs)}</span>]);
+  }
   const graded = report.evidence.some((e) => e.grade_text || e.graded_by || e.grade_source);
+  const noGrade = !graded && report.sourceType === "hadith";
+  if (!rows.length && !noGrade) return null;
 
   return (
     <div className="border-t border-border/70 pt-1">
@@ -227,7 +236,7 @@ function Details({ report, durationMs }: { report: Report; durationMs?: number |
               </div>
             ))}
           </dl>
-          {!graded && report.sourceType === "hadith" ? <p className="mt-3 text-xs text-muted-foreground">{t("evidence.noGrade")}</p> : null}
+          {noGrade ? <p className="mt-3 text-xs text-muted-foreground">{t("evidence.noGrade")}</p> : null}
         </div>
       ) : null}
     </div>
@@ -284,7 +293,7 @@ export function CheckingCard({ reference, text }: { reference?: string | null; t
           {reference ? (
             <>
               {" "}
-              <Ref className="text-gold-ink">{reference}</Ref>
+              <RefLabel reference={reference} className="text-gold-ink" />
             </>
           ) : null}
         </p>
@@ -296,7 +305,8 @@ export function CheckingCard({ reference, text }: { reference?: string | null; t
 
 export function FailureCard({ failure, fromDisk }: { failure: Failure; fromDisk?: boolean }) {
   const t = useT();
-  const d = describeFailure(t, failure, { fromDisk });
+  const admin = useUi((s) => s.admin);
+  const d = describeFailure(t, failure, { fromDisk, admin });
   return (
     <article className={cn("failure-card rounded-2xl border p-4 sm:p-5", d.cancelled ? "border-border bg-muted/50" : "border-mismatch/30 bg-mismatch-soft/50")}>
       <div className="flex items-start gap-3">

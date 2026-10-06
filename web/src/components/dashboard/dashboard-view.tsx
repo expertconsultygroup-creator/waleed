@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, BadgeCheck, Download, MessageCircle, ServerCog, Smartphone } from "lucide-react";
+import { ArrowUpRight, BadgeCheck, Download, MessageCircle, Smartphone, Users } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { cn } from "cn";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Lattice, Rosette } from "@/components/brand/ornaments";
 import { Seal } from "@/components/brand/seal";
+import { RefLabel } from "@/components/chat/ref-label";
 import { Api, describeBase, type ServerStats } from "@/lib/api";
 import { deviceModel, deviceRecords, matchedCount, reviewCount, serverModel, type DashboardModel } from "@/lib/dashboard";
 import { download } from "@/lib/export";
@@ -17,6 +18,7 @@ import { KHATAM_INNER, starOutline } from "@/lib/geometry";
 import { useT, type T } from "@/lib/i18n/use-t";
 import { languageLabel, NEEDS_REVIEW, shortHash, sourceLabel, STATUS_ORDER, statusInfo, TONE_FILL, TONE_SOFT, versionText } from "@/lib/status";
 import { modelConfigured, useIsnad } from "@/lib/store";
+import { useUi } from "@/lib/ui";
 
 const GAUGE_PATH = starOutline(60, 60, 56, 56 * KHATAM_INNER, 8);
 
@@ -62,6 +64,11 @@ function Sparkline({ values }: { values: number[] }) {
   );
 }
 
+/* The tile shows a figure, never a phrase: tenths of a second. */
+function seconds(t: T, ms: number): string {
+  return t("duration.s", { n: t.number(Math.max(0.1, ms / 1000), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
+}
+
 function Hero({ model }: { model: DashboardModel }) {
   const t = useT();
   const matched = matchedCount(model);
@@ -71,7 +78,7 @@ function Hero({ model }: { model: DashboardModel }) {
   const stats = [
     { label: t("dash.kpiChecked"), value: t.number(model.total), hint: model.notChecked ? t("dash.kpiNotChecked", { n: model.notChecked }) : "" },
     { label: t("dash.kpiReview"), value: t.number(review), hint: t("dash.kpiReviewHint"), alert: review > 0 },
-    { label: t("dash.kpiLatency"), value: model.meanLatency == null ? "—" : t.duration(model.meanLatency), hint: "" },
+    { label: t("dash.kpiLatency"), value: model.meanLatency == null ? "—" : seconds(t, model.meanLatency), hint: "" },
   ];
   return (
     <section className="dash-hero relative overflow-hidden rounded-3xl bg-mihrab text-mihrab-foreground dark:bg-mihrab-2 dark:ring-1 dark:ring-gold/15" aria-label={t("dash.kpiMatchRate")}>
@@ -224,8 +231,11 @@ function Bars({ rows, caption }: { rows: { key: string; label: string; value: nu
   );
 }
 
+/* Is the service working, said plainly. Endpoints, versions and checksums are
+   for administrators. */
 function Health() {
   const t = useT();
+  const admin = useUi((s) => s.admin);
   const apiState = useIsnad((s) => s.apiState);
   const caps = useIsnad((s) => s.capabilities);
   const ready = useIsnad((s) => s.ready);
@@ -236,8 +246,8 @@ function Health() {
     {
       state: apiState === "ready" ? "ok" : apiState === "checking" ? "warn" : "down",
       name: t("dash.healthApi"),
-      status: apiState === "ready" ? t("dash.healthReady") : apiState === "checking" ? t("api.checking") : t("api.unavailable"),
-      meta: <bdi className="ref">{describeBase()}{caps?.api_version ? ` · ${versionText(caps.api_version)}` : ""}</bdi>,
+      status: apiState === "ready" ? t("dash.healthReady") : apiState === "checking" ? t("api.checking") : t("dash.healthUnavailable"),
+      meta: admin ? <bdi className="ref">{describeBase()}{caps?.api_version ? ` · ${versionText(caps.api_version)}` : ""}</bdi> : undefined,
     },
   ];
   for (const s of caps?.sources ?? []) {
@@ -249,8 +259,14 @@ function Health() {
       status: remote ? t("dash.healthRemote") : loaded ? t("dash.healthLoaded") : t("dash.healthUnknown"),
       meta: (
         <>
-          {sourceLabel(t, s.source_type)} · {languageLabel(t, s.language)} · <bdi className="ref">{versionText(s.source_version)}</bdi>
-          {loaded?.source_sha256 ? (
+          {sourceLabel(t, s.source_type)} · {languageLabel(t, s.language)}
+          {admin ? (
+            <>
+              {" · "}
+              <bdi className="ref">{versionText(s.source_version)}</bdi>
+            </>
+          ) : null}
+          {admin && loaded?.source_sha256 ? (
             <>
               {" · "}
               <bdi className="ref">sha256 {shortHash(loaded.source_sha256)}</bdi>
@@ -260,8 +276,14 @@ function Health() {
       ),
     });
   }
-  rows.push({ state: prompt ? "ok" : "down", name: t("dash.healthProtocol"), status: prompt ? t("dash.healthLoaded") : t("prompt.notLoaded"), meta: prompt ? <bdi className="ref">{prompt.version}</bdi> : undefined });
-  rows.push({ state: configured ? "ok" : "down", name: t("dash.healthModel"), status: configured ? t("dash.healthReady") : t("model.none"), meta: configured ? <bdi className="ref">{modelName}</bdi> : undefined });
+  if (admin) {
+    rows.push({ state: prompt ? "ok" : "down", name: t("dash.healthProtocol"), status: prompt ? t("dash.healthLoaded") : t("prompt.notLoaded"), meta: prompt ? <bdi className="ref">{prompt.version}</bdi> : undefined });
+    rows.push({ state: configured ? "ok" : "down", name: t("dash.healthModel"), status: configured ? t("dash.healthReady") : t("model.none"), meta: configured ? <bdi className="ref">{modelName}</bdi> : undefined });
+  } else {
+    // Chat needs both the model and the protocol it is given.
+    const chat = configured && !!prompt;
+    rows.push({ state: chat ? "ok" : "down", name: t("dash.healthModel"), status: chat ? t("dash.healthReady") : t("dash.healthUnavailable") });
+  }
 
   const dot = { ok: "bg-match shadow-[0_0_0_3px_var(--match-soft)]", warn: "bg-partial shadow-[0_0_0_3px_var(--partial-soft)]", down: "bg-mismatch shadow-[0_0_0_3px_var(--mismatch-soft)]" };
   return (
@@ -320,7 +342,7 @@ function Flagged({ model, filter }: { model: DashboardModel; filter: string }) {
                     {sourceLabel(t, r.report.sourceType)} · {languageLabel(t, r.report.language)}
                   </p>
                 </td>
-                <td className="px-3 py-3">{r.reference || r.report.citedReference ? <bdi className="ref font-semibold">{r.reference || r.report.citedReference}</bdi> : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-3">{r.reference || r.report.citedReference ? <RefLabel reference={r.reference || r.report.citedReference} className="font-semibold" /> : "—"}</td>
                 <td className="px-3 py-3">
                   <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium", TONE_SOFT[info.tone])}>{info.label}</span>
                 </td>
@@ -369,6 +391,7 @@ function csv(t: T, chats: ReturnType<typeof useIsnad.getState>["chats"], range: 
 
 export function DashboardView() {
   const t = useT();
+  const admin = useUi((s) => s.admin);
   const router = useRouter();
   const chats = useIsnad((s) => s.chats);
   const statsEnabled = useIsnad((s) => s.capabilities?.stats_enabled === true);
@@ -457,7 +480,7 @@ export function DashboardView() {
                     scope === s ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {s === "device" ? <Smartphone className="size-4" /> : <ServerCog className="size-4" />}
+                  {s === "device" ? <Smartphone className="size-4" /> : <Users className="size-4" />}
                   {t(s === "device" ? "dash.scopeDevice" : "dash.scopeServer")}
                 </button>
               ))}
@@ -484,7 +507,7 @@ export function DashboardView() {
 
         {scope === "server" && server.state !== "ready" ? (
           <p className={cn("server-note rounded-2xl border p-4 text-sm", server.state === "disabled" || server.state === "error" ? "border-partial/30 bg-partial-soft" : "border-border bg-card")}>
-            {server.state === "disabled" ? t("dash.serverDisabled") : server.state === "error" ? t("dash.serverError") : t("dash.serverLoading")}
+            {server.state === "disabled" ? t(admin ? "dash.serverDisabledAdmin" : "dash.serverDisabled") : server.state === "error" ? t("dash.serverError") : t("dash.serverLoading")}
           </p>
         ) : null}
         {scope === "server" && model ? (

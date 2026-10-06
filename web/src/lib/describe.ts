@@ -9,8 +9,11 @@ export interface Described {
 }
 
 /* Words for a failure, in the reader's language, at render time. Nothing here
-   ever says "not found": a check that failed decided nothing. */
-export function describeFailure(t: T, f: Failure, opts: { fromDisk?: boolean } = {}): Described {
+   ever says "not found": a check that failed decided nothing. Status codes,
+   field paths and a provider's own error text are shown to administrators
+   only; readers are told what happened and what to do. */
+export function describeFailure(t: T, f: Failure, opts: { fromDisk?: boolean; admin?: boolean } = {}): Described {
+  const admin = opts.admin === true;
   if (f.title) {
     // Saved by the classic interface, already worded.
     return { title: f.title, message: f.message ?? "", detail: f.detail, cancelled: f.tone === "cancelled" };
@@ -30,12 +33,12 @@ export function describeFailure(t: T, f: Failure, opts: { fromDisk?: boolean } =
       case "no_stream":
         return { title: t("modelError.noStream"), message: t("modelError.noStreamMsg"), cancelled: false };
       case "provider_error":
-        return { title: t("modelError.provider"), message: f.message || t("modelError.providerMsg"), cancelled: false };
+        return { title: t("modelError.provider"), message: (admin && f.message) || t("modelError.providerMsg"), cancelled: false };
       default:
         return {
           title: t("modelError.failed"),
-          message: f.httpStatus ? t("modelError.refusedRaw", { status: String(f.httpStatus) }) : t("modelError.failedMsg"),
-          detail: f.detail,
+          message: admin && f.httpStatus ? t("modelError.refusedRaw", { status: String(f.httpStatus) }) : t("modelError.failedMsg"),
+          detail: admin ? f.detail : undefined,
           cancelled: false,
         };
     }
@@ -52,7 +55,7 @@ export function describeFailure(t: T, f: Failure, opts: { fromDisk?: boolean } =
     return {
       title: t("citation.rejected"),
       message: (reasons[f.reason ?? ""] ?? t("citation.rejectedGeneric")) + t("citation.withheld"),
-      detail: f.reason ? t("citation.reason", { reason: f.reason }) : undefined,
+      detail: admin && f.reason ? t("citation.reason", { reason: f.reason }) : undefined,
       cancelled: false,
     };
   }
@@ -79,8 +82,8 @@ export function describeFailure(t: T, f: Failure, opts: { fromDisk?: boolean } =
     case "unsupported_language":
       return {
         title: t("error.rejected"),
-        message: f.message || t("error.rejectedMsg"),
-        detail: f.details?.length
+        message: admin && f.message ? f.message : f.code === "invalid_reference" ? t("error.invalidReferenceMsg") : t("error.rejectedMsg"),
+        detail: admin && f.details?.length
           ? t("error.fields", {
               fields: f.details.map((d) => (d.location ?? []).join(".") + (d.code ? ` (${d.code})` : "")).join(", "),
             })
@@ -98,8 +101,10 @@ export function describeFailure(t: T, f: Failure, opts: { fromDisk?: boolean } =
     default:
       return {
         title: t("error.verifyFailed"),
-        message: f.message || t("error.verifyFailedMsg"),
-        detail: [f.httpStatus ? `HTTP ${f.httpStatus}` : "", f.code ? t("error.code", { code: f.code }) : ""].filter(Boolean).join(" · "),
+        message: (admin && f.message) || t("error.verifyFailedMsg"),
+        detail: admin
+          ? [f.httpStatus ? `HTTP ${f.httpStatus}` : "", f.code ? t("error.code", { code: f.code }) : ""].filter(Boolean).join(" · ")
+          : undefined,
         cancelled: false,
       };
   }

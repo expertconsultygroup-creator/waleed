@@ -6,6 +6,7 @@ import { currentT } from "./i18n/use-t";
 import { streamChat, type ChatMessage } from "./model";
 import { modelConfigured, persist, useIsnad } from "./store";
 import type { Chat, Citation, Failure, Part, VerifyRequest } from "./types";
+import { formatReference } from "./reference";
 
 /* Rules this file exists to enforce (as the classic interface did):
    - Nothing unverified is shown as a quotation. A marked block is held whole
@@ -340,7 +341,8 @@ export function submitVerify(request: VerifyRequest): string | null {
   s.addItem(chat.id, { role: "tool", kind: "request", status: "complete", request: trimmed });
   const fresh = store().chats.find((c) => c.id === chat!.id)!;
   if (fresh.items.filter((m) => m.role === "tool").length === 1 && !fresh.title) {
-    store().renameChat(chat.id, currentT()("chat.checkTitle", { ref: trimmed.reference || (trimmed.quote ?? "").slice(0, 32) }));
+    const t = currentT();
+    store().renameChat(chat.id, t("chat.checkTitle", { ref: trimmed.reference ? formatReference(t, trimmed.reference) : (trimmed.quote ?? "").slice(0, 32) }));
   }
   persist();
   void runVerify(chat.id, trimmed);

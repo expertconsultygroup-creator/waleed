@@ -214,7 +214,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div className="relative border-t border-white/10 p-3">
         <button
           type="button"
-          onClick={() => openSettings("model")}
+          onClick={() => openSettings()}
           className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-start transition hover:bg-white/5"
         >
           <span className="grid size-9 place-items-center rounded-full bg-white/[0.07] ring-1 ring-white/10">

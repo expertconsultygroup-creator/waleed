@@ -5,19 +5,35 @@ from __future__ import annotations
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from isnad_core.i18n import FALLBACK_LOCALE, render
+
 
 class RequestBodyLimitMiddleware:
     """Reject oversized buffered HTTP requests, including chunked bodies."""
 
-    def __init__(self, app: ASGIApp, *, max_body_bytes: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_body_bytes: int,
+        path_limits: dict[str, int] | None = None,
+    ) -> None:
         if max_body_bytes < 1:
             raise ValueError("max_body_bytes must be positive")
         self.app = app
         self.max_body_bytes = max_body_bytes
+        self.path_limits = dict(path_limits or {})
+
+    def _limit_for(self, scope: Scope) -> int:
+        return self.path_limits.get(scope.get("path", ""), self.max_body_bytes)
 
     @staticmethod
-    def _error_response(scope: Scope, *, status_code: int, code: str, message: str) -> JSONResponse:
+    def _error_response(
+        scope: Scope, *, status_code: int, code: str, **params: object
+    ) -> JSONResponse:
         state = scope.get("state", {})
+        # The outer HTTP middleware negotiates the locale before this one runs.
+        message = render(f"error.{code}", state.get("locale", FALLBACK_LOCALE), **params)
         return JSONResponse(
             status_code=status_code,
             content={
@@ -31,6 +47,7 @@ class RequestBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        max_body_bytes = self._limit_for(scope)
         headers = {name.lower(): value for name, value in scope.get("headers", ())}
         raw_content_length = headers.get(b"content-length")
         if raw_content_length is not None:
@@ -41,7 +58,6 @@ class RequestBodyLimitMiddleware:
                     scope,
                     status_code=400,
                     code="invalid_content_length",
-                    message="The request content length is invalid.",
                 )
                 await response(scope, receive, send)
                 return
@@ -50,16 +66,15 @@ class RequestBodyLimitMiddleware:
                     scope,
                     status_code=400,
                     code="invalid_content_length",
-                    message="The request content length is invalid.",
                 )
                 await response(scope, receive, send)
                 return
-            if content_length > self.max_body_bytes:
+            if content_length > max_body_bytes:
                 response = self._error_response(
                     scope,
                     status_code=413,
                     code="request_too_large",
-                    message=f"The request body limit is {self.max_body_bytes} bytes.",
+                    max_body_bytes=max_body_bytes,
                 )
                 await response(scope, receive, send)
                 return
@@ -74,12 +89,12 @@ class RequestBodyLimitMiddleware:
             if message["type"] != "http.request":
                 continue
             bytes_received += len(message.get("body", b""))
-            if bytes_received > self.max_body_bytes:
+            if bytes_received > max_body_bytes:
                 response = self._error_response(
                     scope,
                     status_code=413,
                     code="request_too_large",
-                    message=f"The request body limit is {self.max_body_bytes} bytes.",
+                    max_body_bytes=max_body_bytes,
                 )
                 await response(scope, receive, send)
                 return

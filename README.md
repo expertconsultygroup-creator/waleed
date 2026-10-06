@@ -8,30 +8,39 @@ The repository contains the verification engine, a REST and WebSocket API, an MC
 
 ## Screenshots
 
-Chat: prose streams as it arrives; each marked quotation is held, checked, and then rendered as its own card
-where the model wrote it, with the prose that follows it still after it.
+The interface (Next.js, in `web/`) opens in Arabic, right to left; English is one click away in the header and in Settings. The design ("Emerald & Gold") frames the app in deep emerald with a gold geometric lattice, uses emerald for actions, gold for ornament only, and ivory in one place: behind Qur'an and hadith text, set like a mushaf page. Every checked quotation carries a seal (an eight-pointed khatam in the result's colour) and its chain of checking: the submitted text, the reference, and the pinned edition that answered. Headings use Noto Kufi Arabic, the interface Readex Pro, source text Amiri Quran; the fonts are built into the site, so the page asks nothing of a third party at runtime.
 
-![Chat with a verified citation](docs/screenshots/01-chat-citation-light.png)
+Chat: prose streams as it arrives; each marked quotation is held, checked, and then rendered as its own card where the model wrote it.
 
-Dark theme, same conversation and the same card.
+![Chat with verified citations, Arabic](docs/screenshots/01-chat-citation-light.png)
 
-![Chat with a verified citation, dark theme](docs/screenshots/02-chat-citation-dark.png)
+Dark theme, same conversation.
 
-Hand check without a model, Qur'an Arabic: `normalized_match` with the Tanzil wording, version, licence, and checksum.
+![Chat with verified citations, dark theme](docs/screenshots/02-chat-citation-dark.png)
+
+Hand check without a model, Qur'an Arabic: `normalized_match`, with the Tanzil wording set as in a mushaf, the version, licence and checksum.
 
 ![Hand check, Qur'an Arabic](docs/screenshots/03-verify-quran-arabic.png)
 
-Hand check, hadith English: `partial_match` with the HadeethEnc record, its coverage note, and the source-supplied grade kept separate from the match status.
+Hand check in the English interface, hadith English: `partial_match` with the HadeethEnc record, its coverage note, and the source-supplied grade kept separate from the match status.
 
 ![Hand check, hadith English](docs/screenshots/04-verify-hadith-grade.png)
 
-Model settings: provider, base URL, model name, key handling, and the loaded protocol prompt version.
+Settings: language, theme, numerals (Arabic-Indic or Western) and calendar (Gregorian or Hijri).
 
-![Model settings](docs/screenshots/05-settings-model.png)
+![Appearance and language settings](docs/screenshots/05-settings-language.png)
 
 Narrow layout.
 
 ![Narrow layout](docs/screenshots/06-narrow-layout.png)
+
+Dashboard (`#/dashboard`): citations checked, match rate, citations that need review, check time, status distribution, daily activity, sources and languages, source health, and the flagged citations with a link back to each conversation. "This device" reads the browser's saved history; "Server" reads `GET /v1/stats`, which counts results without storing any quotation or reference and is off unless `ISNAD_STATS_ENABLED=1`.
+
+![Dashboard](docs/screenshots/07-dashboard.png)
+
+The English interface.
+
+![Chat, English interface](docs/screenshots/08-chat-english.png)
 
 `scripts/capture_screenshots.py` produces these images from a running build and the real API, so they match the code in the repository.
 
@@ -73,12 +82,27 @@ Provenance (edition name, version, licence, URL, content checksum where availabl
 | `src/isnad_core/prompt.py` | The citation protocol prompt and its version |
 | `src/isnad_core/api/` | FastAPI application: REST, WebSocket, served interface, schemas, middleware |
 | `src/isnad_core/integrations/` | MCP server and LiteLLM guardrail adapter |
-| `frontend/` | Interface sources (`app.js`, `citation_stream.js`, `theme.css`, `icons.svg`, template) and `build.py` |
+| `web/` | The interface: Next.js (App Router, static export), TypeScript, Tailwind CSS and shadcn/ui. `npm run export` builds it into `src/isnad_core/api/web/`, which the API serves at `/` |
+| `frontend/` | The classic single-file interface, served at `/classic` and offered as an offline download; its `citation_stream.js` is shared with `web/` |
 | `tests/` | Contract, evidence, streaming, prompt, provider-pipeline, and browser tests |
 | `scripts/` | Verification suite, source ingest, synthetic evaluation, secret scan, screenshot capture |
 | `docs/` | API contract, integrations, evaluation notes, screenshots |
 | `evaluation/reports/` | Generated evaluation reports |
 | `skills/isnad-citation-verification/` | Agent instruction for hosts that load skills |
+
+## Developing the interface
+
+The API serves the committed static export, so running Isnad needs no Node toolchain. To change the interface:
+
+```bash
+cd web
+npm install
+NEXT_PUBLIC_ISNAD_API_BASE=http://127.0.0.1:8000 npm run dev   # against a running API (CORS allows localhost:3000)
+npm run lint && npm run typecheck
+npm run export   # builds web/out and copies it into src/isnad_core/api/web/
+```
+
+`web/src/lib/i18n/messages.ts` holds every interface string in Arabic and English under the same keys as the classic interface, and `tests/test_web.py` checks that both languages carry the same keys. The citation streamer is copied from `frontend/citation_stream.js` before every build, and a test fails if the two differ.
 
 ## Install and run
 
@@ -125,7 +149,7 @@ Request fields, response schema, error codes, limits, and origin rules are docum
 
 Chat mode:
 
-1. Start the API and open `/`.
+1. Start the API and open `/` (the dashboard is at `/dashboard/`; the classic single-file interface stays at `/classic`).
 2. Open **Settings → Model**. Choose a provider preset or "Other OpenAI-compatible endpoint", set the base URL and model name, and enter a key if the provider requires one.
 3. Send a message. Prose streams immediately. A quotation the model marks with the citation protocol is held, verified through `POST /v1/verify`, and then shown as a card with the source wording, the reference, the status, and the provenance. Text that is not a marked quotation streams untouched.
 
@@ -139,6 +163,9 @@ Deployment settings:
 | --- | --- |
 | `ISNAD_CORS_ORIGINS` | Comma-separated origins allowed to call the API from a browser |
 | `ISNAD_GUI_FRAME_ANCESTORS` | Optional `frame-ancestors` value for the served page; the default omits it |
+| `ISNAD_DEFAULT_LOCALE` | `en` (default) or `ar`: language of human-readable API text when a request sets neither `?lang=` nor `Accept-Language` |
+| `ISNAD_STATS_ENABLED` | `1` enables `GET /v1/stats` (aggregate counts only); off by default because the service has no authentication |
+| `ISNAD_STATS_PATH` | Optional JSON file that keeps those counters across restarts |
 
 ### Model endpoints
 
@@ -182,6 +209,9 @@ All surfaces call the same verification engine and return the same fields; none 
 | Browser streamer | `tests/test_citation_stream_js.py` |
 | Provider → gate → verifier pipeline | `tests/test_fake_provider_pipeline.py` |
 | Served interface markup and build drift | `tests/test_api_gui.py` |
+| Web interface serving, export, catalog parity | `tests/test_web.py` |
+| Web interface in a real browser (optional) | `tests/test_web_browser.py` |
+| Interface strings, Arabic plurals and search | `tests/test_i18n_js.py` |
 | Real browser behaviour (optional) | `tests/test_gui_browser.py` |
 | Credential scan | `tests/test_secret_scan.py` |
 

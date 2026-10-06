@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from isnad_core.i18n.messages import has_message, render
+
 
 class MatchStatus(StrEnum):
     """Textual correspondence outcomes; these are not authenticity grades or rulings."""
@@ -87,6 +89,17 @@ class VerificationResult:
     explanation: str
     candidate_count: int | None = 0
     evidence_truncated: bool = False
+    # ``explanation`` is the English rendering, kept for existing callers. The key and
+    # parameters let a transport render the same explanation in another locale.
+    explanation_key: str | None = None
+    explanation_params: tuple[tuple[str, str], ...] = ()
+
+    def render_explanation(self, locale: str = "en") -> str:
+        """Return the explanation in ``locale``; results without a catalog key stay as-is."""
+
+        if locale == "en" or self.explanation_key is None or not has_message(self.explanation_key):
+            return self.explanation
+        return render(self.explanation_key, locale, **dict(self.explanation_params))
 
     @property
     def is_textually_matched(self) -> bool:

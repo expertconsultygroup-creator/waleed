@@ -6,6 +6,7 @@ import difflib
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from isnad_core.i18n import Message
 from isnad_core.models import (
     Evidence,
     MatchStatus,
@@ -83,12 +84,16 @@ class QuranTextVerifier:
         language: str,
         edition_label: str,
         strip_quranenc_footnote_markers: bool = False,
+        edition_key: str | None = None,
     ) -> None:
         if language not in {"ar", "en"}:
             raise ValueError("Qur'an text verifier language must be Arabic or English.")
         self._corpus = corpus
         self._language = language
         self._edition_label = edition_label
+        # Explanations name the edition by catalog key when one exists, so the name is
+        # localized with the sentence; an unknown label is rendered literally.
+        self._edition = edition_key or edition_label
         self._strip_quranenc_footnote_markers = strip_quranenc_footnote_markers
         self._indexes = {
             surah: self._build_index(verses)
@@ -164,10 +169,9 @@ class QuranTextVerifier:
                 matched_references=(),
                 evidence=(),
                 wording_differences=(),
-                explanation=(
-                    f"This verifier checks {self._language} Qur'an quotations against "
-                    f"the pinned {self._edition_label} edition only."
-                ),
+                **self._message(
+                    "quran.unsupported_source_or_language", language=self._language
+                ).result_fields(),
             )
 
         quote = citation.quote.strip() if citation.quote is not None else ""
@@ -214,8 +218,7 @@ class QuranTextVerifier:
                         self._matched_text_differences(quote, candidate.matched_fragment)
                         if status is not MatchStatus.EXACT_MATCH
                         else (),
-                        f"The quote matches the cited {self._edition_label} text. "
-                        "This is a textual comparison only.",
+                        self._message("quran.cited_match"),
                     )
                 return self._result_for_candidate(
                     citation,
@@ -223,8 +226,7 @@ class QuranTextVerifier:
                     candidate,
                     reference.display,
                     self._matched_text_differences(quote, candidate.matched_fragment),
-                    f"The quote is a contiguous fragment of the cited {self._edition_label} text. "
-                    "The full source ayah text is included as evidence.",
+                    self._message("quran.cited_partial_match"),
                 )
             if cited_search.candidates or cited_search.truncated:
                 return self._result_for_candidates(
@@ -232,8 +234,7 @@ class QuranTextVerifier:
                     MatchStatus.AMBIGUOUS_MULTIPLE_MATCHES,
                     cited_search,
                     reference.display,
-                    "The wording occurs more than once within the cited range; the exact "
-                    "occurrence is ambiguous.",
+                    self._message("quran.cited_ambiguous"),
                 )
 
         global_search = self._find_candidates_across_corpus(normalized_quote, raw_quote=quote)
@@ -247,8 +248,7 @@ class QuranTextVerifier:
                         candidate,
                         reference.display,
                         self._matched_text_differences(quote, candidate.matched_fragment),
-                        "The quote was located in the pinned corpus, but not at the cited "
-                        "reference.",
+                        self._message("quran.quote_found_wrong_reference"),
                     )
                 if candidate.is_full_match:
                     status = (
@@ -256,17 +256,10 @@ class QuranTextVerifier:
                         if candidate.is_raw_exact
                         else MatchStatus.NORMALIZED_MATCH
                     )
-                    explanation = (
-                        f"The quote matches a complete ayah or range in the pinned "
-                        f"{self._edition_label} corpus. This is a textual comparison only."
-                    )
+                    explanation = self._message("quran.full_match")
                 else:
                     status = MatchStatus.PARTIAL_MATCH
-                    explanation = (
-                        f"The quote is a contiguous fragment found in the pinned "
-                        f"{self._edition_label} corpus. The full source ayah text "
-                        "is included as evidence."
-                    )
+                    explanation = self._message("quran.partial_match")
                 return self._result_for_candidate(
                     citation,
                     status,
@@ -282,8 +275,7 @@ class QuranTextVerifier:
                 MatchStatus.AMBIGUOUS_MULTIPLE_MATCHES,
                 global_search,
                 reference.display if reference is not None else None,
-                "The wording has multiple locations in the checked corpus; a unique "
-                "reference cannot be established from this quote alone.",
+                self._message("quran.ambiguous_multiple_matches"),
             )
 
         if reference is not None:
@@ -299,10 +291,7 @@ class QuranTextVerifier:
                 matched_references=tuple(verse.reference for verse in referenced_verses),
                 evidence=evidence,
                 wording_differences=self._matched_text_differences(quote, cited_text),
-                explanation=(
-                    "The reference exists in the pinned corpus, but the quote does not "
-                    "match that text and was not located elsewhere in the checked corpus."
-                ),
+                **self._message("quran.mismatch_at_cited_reference").result_fields(),
             )
 
         return VerificationResult(
@@ -315,11 +304,7 @@ class QuranTextVerifier:
             matched_references=(),
             evidence=(),
             wording_differences=(),
-            explanation=(
-                f"The quote was not located in the checked {self._edition_label} corpus. "
-                "This result is limited to that source and does not establish that the "
-                "wording is fabricated or absent from every source."
-            ),
+            **self._message("quran.not_found_in_checked_corpus").result_fields(),
         )
 
     def _result_for_reference_without_quote(
@@ -338,10 +323,7 @@ class QuranTextVerifier:
             matched_references=tuple(verse.reference for verse in verses),
             evidence=self._evidence_for_verses(verses, matched_fragments=None),
             wording_differences=(),
-            explanation=(
-                f"The reference exists in the pinned {self._edition_label} corpus, but no quote "
-                "was supplied for comparison."
-            ),
+            **self._message("quran.reference_found_without_quote").result_fields(),
         )
 
     def _result_for_candidate(
@@ -351,7 +333,7 @@ class QuranTextVerifier:
         candidate: _Candidate,
         cited_reference: str | None,
         differences: tuple[WordingDifference, ...],
-        explanation: str,
+        explanation: Message,
     ) -> VerificationResult:
         return VerificationResult(
             status=status,
@@ -363,7 +345,7 @@ class QuranTextVerifier:
             matched_references=candidate.references,
             evidence=self._evidence_for_candidate(candidate),
             wording_differences=differences,
-            explanation=explanation,
+            **explanation.result_fields(),
             candidate_count=1,
         )
 
@@ -373,7 +355,7 @@ class QuranTextVerifier:
         status: MatchStatus,
         search: _CandidateSearch,
         cited_reference: str | None,
-        explanation: str,
+        explanation: Message,
     ) -> VerificationResult:
         candidates = search.candidates
         references = tuple(
@@ -396,10 +378,15 @@ class QuranTextVerifier:
             matched_references=references,
             evidence=evidence,
             wording_differences=(),
-            explanation=explanation,
+            **explanation.result_fields(),
             candidate_count=None if search.truncated else len(candidates),
             evidence_truncated=search.truncated,
         )
+
+    def _message(self, key: str, **params: str) -> Message:
+        """Build an explanation that names this verifier's edition."""
+
+        return Message.of(key, edition=self._edition, **params)
 
     def _evidence_for_candidate(self, candidate: _Candidate) -> tuple[Evidence, ...]:
         evidence: list[Evidence] = []
@@ -588,6 +575,7 @@ class QuranArabicVerifier(QuranTextVerifier):
             corpus if corpus is not None else QuranCorpus.load_default(),
             language="ar",
             edition_label="Tanzil Uthmani",
+            edition_key="tanzil_uthmani",
         )
 
 
@@ -604,4 +592,5 @@ class QuranEnglishVerifier(QuranTextVerifier):
             language="en",
             edition_label="QuranEnc English Saheeh translation",
             strip_quranenc_footnote_markers=True,
+            edition_key="quranenc_english_saheeh",
         )

@@ -4,6 +4,8 @@ Install the optional adapter with ``pip install 'isnad-core[litellm]'`` and conf
 ``isnad_core.integrations.litellm_guardrail.IsnadCitationGuardrail`` in LiteLLM's
 custom-guardrail registry. The stream extension field is ``isnad_event``; clients that
 need event-aware rendering should use Chat Completions streaming and read that field.
+The optional ``locale`` argument (``en`` by default, or ``ar``) sets the language of the
+human-readable result fields; statuses, codes and references never change with it.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ except ImportError as exc:  # pragma: no cover - depends on optional extra
 
 from isnad_core.api.serializers import verification_response
 from isnad_core.engine import VerificationEngine
+from isnad_core.i18n import FALLBACK_LOCALE, normalize_locale
 from isnad_core.streaming import (
     MAX_STREAM_CHARACTERS,
     StreamEvent,
@@ -35,9 +38,18 @@ _STOP = object()
 class IsnadCitationGuardrail(CustomGuardrail):
     """Withhold marked citation blocks in LiteLLM chat streams until core verification."""
 
-    def __init__(self, *, engine: VerificationEngine | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        engine: VerificationEngine | None = None,
+        locale: str = "en",
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self._engine = engine if engine is not None else VerificationEngine()
+        # Language of human-readable result fields (`explanation`, source names);
+        # statuses and references are the same in every locale.
+        self._locale = normalize_locale(locale) or FALLBACK_LOCALE
 
     async def apply_guardrail(
         self,
@@ -110,11 +122,11 @@ class IsnadCitationGuardrail(CustomGuardrail):
                     )
                 async for event in _async_events(gate.feed(content)):
                     emitted_event = True
-                    yield _chunk_for_event(chunk, event)
+                    yield _chunk_for_event(chunk, event, self._locale)
 
             if finish_reason is not None:
                 async for event in _async_events(gate.finish()):
-                    yield _chunk_for_event(chunk, event)
+                    yield _chunk_for_event(chunk, event, self._locale)
                 finished = True
                 yield _copy_chunk(chunk, text=None, finish_reason=finish_reason)
             elif content is None or (content == "" and not emitted_event):
@@ -122,7 +134,7 @@ class IsnadCitationGuardrail(CustomGuardrail):
 
         if not finished and last_chunk is not None:
             async for event in _async_events(gate.finish()):
-                yield _chunk_for_event(last_chunk, event)
+                yield _chunk_for_event(last_chunk, event, self._locale)
 
 
 def _contains_citation_marker(text: str) -> bool:
@@ -196,7 +208,7 @@ def _next_event(events: Any) -> StreamEvent | object:
         return _STOP
 
 
-def _chunk_for_event(chunk: Any, event: StreamEvent) -> Any:
+def _chunk_for_event(chunk: Any, event: StreamEvent, locale: str = "en") -> Any:
     if event.type is StreamEventType.TEXT:
         return _copy_chunk(chunk, text=event.text)
 
@@ -208,7 +220,9 @@ def _chunk_for_event(chunk: Any, event: StreamEvent) -> Any:
     if event.code is not None:
         event_payload["code"] = event.code
     if event.result is not None:
-        event_payload["result"] = verification_response(event.result).model_dump(mode="json")
+        event_payload["result"] = verification_response(event.result, locale).model_dump(
+            mode="json"
+        )
     return _copy_chunk(chunk, text=None, event=event_payload)
 
 

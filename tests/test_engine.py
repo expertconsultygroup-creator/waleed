@@ -56,6 +56,7 @@ def test_engine_keeps_unconfigured_sources_explicitly_unsupported(
     assert result.status is MatchStatus.UNSUPPORTED_SOURCE_OR_LANGUAGE
     assert result.source_metadata is None
     assert "not a finding" in result.explanation
+    assert result.explanation_key == "engine.unsupported_source_or_language"
 
 
 def test_engine_rejects_duplicate_source_language_registration() -> None:

@@ -10,12 +10,14 @@ from isnad_core.api.schemas import (
     ReadySourceResponse,
     SourceCapabilityResponse,
     SourceMetadataResponse,
+    StatusDetailResponse,
     StreamingContractResponse,
     VerifyResponse,
     WordingDifferenceResponse,
 )
 from isnad_core.engine import VerificationEngine
-from isnad_core.models import MatchStatus, VerificationResult
+from isnad_core.i18n import SUPPORTED_LOCALES, has_message, render
+from isnad_core.models import MatchStatus, SourceMetadata, VerificationResult
 from isnad_core.quran.verifier import (
     MAX_MATCH_CANDIDATES,
     MAX_QUOTE_CHARACTERS,
@@ -33,20 +35,42 @@ from isnad_core.streaming import (
 SERVICE_NAME = "isnad-core"
 
 
-def verification_response(result: VerificationResult) -> VerifyResponse:
-    """Map the shared result to the stable versioned public response schema."""
+def source_display_name(source: SourceMetadata, locale: str = "en") -> str:
+    """Return the localized reader-facing name of a source, or its upstream name."""
 
+    key = f"source.{source.source_id}.display_name"
+    return render(key, locale) if has_message(key) else source.name
+
+
+def source_coverage_note(source: SourceMetadata, locale: str = "en") -> str | None:
+    """Return the coverage note in ``locale`` when the catalog has one for this source."""
+
+    key = f"source.{source.source_id}.coverage_note"
+    if source.coverage_note is None or locale == "en" or not has_message(key):
+        return source.coverage_note
+    return render(key, locale)
+
+
+def verification_response(result: VerificationResult, locale: str = "en") -> VerifyResponse:
+    """Map the shared result to the stable versioned public response schema.
+
+    Only human-readable text depends on ``locale``; status, references and evidence
+    are identical in every locale.
+    """
+
+    source = result.source_metadata
     source_metadata = (
         SourceMetadataResponse(
-            source_id=result.source_metadata.source_id,
-            name=result.source_metadata.name,
-            url=result.source_metadata.url,
-            version=result.source_metadata.version,
-            license=result.source_metadata.license,
-            content_sha256=result.source_metadata.content_sha256,
-            coverage_note=result.source_metadata.coverage_note,
+            source_id=source.source_id,
+            name=source.name,
+            display_name=source_display_name(source, locale),
+            url=source.url,
+            version=source.version,
+            license=source.license,
+            content_sha256=source.content_sha256,
+            coverage_note=source_coverage_note(source, locale),
         )
-        if result.source_metadata is not None
+        if source is not None
         else None
     )
     return VerifyResponse(
@@ -83,13 +107,19 @@ def verification_response(result: VerificationResult) -> VerifyResponse:
             )
             for item in result.wording_differences
         ],
-        explanation=result.explanation,
+        explanation=result.render_explanation(locale),
+        explanation_key=result.explanation_key,
         candidate_count=result.candidate_count,
         evidence_truncated=result.evidence_truncated,
     )
 
 
-def capabilities_response(engine: VerificationEngine) -> CapabilitiesResponse:
+def capabilities_response(
+    engine: VerificationEngine,
+    locale: str = "en",
+    *,
+    stats_enabled: bool = False,
+) -> CapabilitiesResponse:
     """Build the one shared capabilities contract for every integration surface."""
 
     return CapabilitiesResponse(
@@ -97,17 +127,28 @@ def capabilities_response(engine: VerificationEngine) -> CapabilitiesResponse:
         service=SERVICE_NAME,
         status_semantics="textual_match_only_not_authenticity_or_ruling",
         statuses=list(MatchStatus),
+        status_details=[
+            StatusDetailResponse(
+                status=status,
+                label=render(f"status.{status.value}.label", locale),
+                meaning=render(f"status.{status.value}.meaning", locale),
+            )
+            for status in MatchStatus
+        ],
+        locales=list(SUPPORTED_LOCALES),
+        locale=locale,
         sources=[
             SourceCapabilityResponse(
                 source_type=capability.source_type,
                 language=capability.language,
                 source_id=capability.source_metadata.source_id,
                 name=capability.source_metadata.name,
+                display_name=source_display_name(capability.source_metadata, locale),
                 source_version=capability.source_metadata.version,
                 normalization_profile=capability.normalization_profile,
                 mode=capability.mode,
                 reference_format=capability.reference_format,
-                coverage_note=capability.source_metadata.coverage_note,
+                coverage_note=source_coverage_note(capability.source_metadata, locale),
             )
             for capability in engine.capabilities
         ],
@@ -128,14 +169,10 @@ def capabilities_response(engine: VerificationEngine) -> CapabilitiesResponse:
             placeholder_code="checking_citation",
             events=[event_type.value for event_type in StreamEventType]
             + ["stream_complete", "stream_error"],
-            policy=(
-                "Prose outside marked citation blocks streams immediately; quote and reference "
-                "stay hidden until verification completes. Literal marker text inside a quote "
-                "must be backslash-escaped. Malformed or incomplete blocks are rejected without "
-                "quote text."
-            ),
+            policy=render("capabilities.streaming_policy", locale),
         ),
         system_prompt_path="/v1/system-prompt",
+        stats_enabled=stats_enabled,
     )
 
 

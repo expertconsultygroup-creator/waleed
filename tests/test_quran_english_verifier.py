@@ -90,6 +90,8 @@ def test_english_not_found_does_not_claim_global_absence(verifier: QuranEnglishV
     assert result.status is MatchStatus.NOT_FOUND_IN_CHECKED_CORPUS
     assert result.evidence == ()
     assert "does not establish" in result.explanation
+    assert result.explanation_key == "quran.not_found_in_checked_corpus"
+    assert "QuranEnc" in result.explanation
 
 
 def test_english_verifier_rejects_other_languages_as_unsupported(

@@ -122,3 +122,20 @@ def test_both_builds_share_one_body_and_script() -> None:
     assert served_body == standalone_body
     assert '<meta name="isnad-build" content="standalone">' in standalone
     assert '<meta http-equiv="Content-Security-Policy"' in served
+
+
+def test_interface_is_arabic_first_with_embedded_fonts() -> None:
+    html = SERVED_TEMPLATE.read_text(encoding="utf-8")
+
+    # Arabic and right-to-left before any script runs, so the first paint is right.
+    assert '<html lang="ar" data-theme="light" dir="rtl">' in html
+    # The disclaimers are stated in Arabic as well as English.
+    assert "ليست حكمًا على صحة الحديث ولا فتوى شرعية" in html
+    assert "ولا تستنتجها هذه الواجهة أبدًا" in html
+    assert "لا يعني أن النص غير موجود" in html
+    # The fonts travel inside the file; the policy allows data: for fonts only.
+    for family in ("IBM Plex Sans Arabic", "IBM Plex Mono", "Amiri Quran"):
+        assert f"font-family: '{family}'" in html
+    assert "src: url(data:font/woff2;base64," in html
+    assert "font-src 'self' data:;" in html
+    assert "img-src 'self' data:;" in html

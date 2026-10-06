@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 
 from isnad_core.errors import SourceUnavailable
+from isnad_core.i18n import Message, render
 from isnad_core.models import (
     Evidence,
     MatchStatus,
@@ -278,10 +279,7 @@ class HadeethEncVerifier:
             license=(
                 "HadeethEnc reuse terms: do not modify content; identify the publisher and source."
             ),
-            coverage_note=(
-                "Curated selection, not a comprehensive hadith corpus. A missing result "
-                "means only that the checked HadeethEnc source did not locate it."
-            ),
+            coverage_note=render("source.hadeethenc-api-v1.coverage_note", "en"),
         )
 
     @property
@@ -324,10 +322,9 @@ class HadeethEncVerifier:
                 matched_references=(),
                 evidence=(),
                 wording_differences=(),
-                explanation=(
-                    f"This adapter checks {self._language} hadith text in the curated "
-                    "HadeethEnc.com selection only."
-                ),
+                **Message.of(
+                    "hadith.unsupported_source_or_language", language=self._language
+                ).result_fields(),
             )
 
         quote = citation.quote.strip() if citation.quote is not None else ""
@@ -351,10 +348,7 @@ class HadeethEncVerifier:
                 matched_references=(reference,),
                 evidence=(self._evidence(record, matched_fragment=None),),
                 wording_differences=(),
-                explanation=(
-                    "The HadeethEnc record was located. Its supplied grade and attribution "
-                    "are shown separately and are not a ruling by this verifier."
-                ),
+                **Message.of("hadith.reference_found_without_quote").result_fields(),
             )
 
         if record_id is not None:
@@ -376,11 +370,7 @@ class HadeethEncVerifier:
                             (occurrence,),
                             cited_reference=f"hadeethenc:{record_id}",
                             differences=differences,
-                            explanation=(
-                                "The quote matches text in the cited HadeethEnc record. "
-                                "This textual comparison does not establish authenticity "
-                                "or a religious ruling."
-                            ),
+                            explanation=Message.of("hadith.cited_match"),
                         )
                     return self._result_for_occurrences(
                         citation,
@@ -388,9 +378,7 @@ class HadeethEncVerifier:
                         tuple(cited_occurrences),
                         cited_reference=f"hadeethenc:{record_id}",
                         differences=(),
-                        explanation=(
-                            "The quote occurs more than once in the cited HadeethEnc record."
-                        ),
+                        explanation=Message.of("hadith.cited_ambiguous"),
                     )
 
             global_occurrences, search_truncated = self._search_occurrences(quote)
@@ -403,10 +391,7 @@ class HadeethEncVerifier:
                     differences=self._wording_differences(
                         quote, global_occurrences[0].matched_fragment
                     ),
-                    explanation=(
-                        "The quote was located in a different HadeethEnc record than the "
-                        "cited record ID. This is a locator mismatch, not a hadith grade."
-                    ),
+                    explanation=Message.of("hadith.quote_found_wrong_reference"),
                 )
             if len(global_occurrences) > 1 or search_truncated and global_occurrences:
                 return self._result_for_occurrences(
@@ -415,10 +400,7 @@ class HadeethEncVerifier:
                     global_occurrences,
                     cited_reference=f"hadeethenc:{record_id}",
                     differences=(),
-                    explanation=(
-                        "The wording has multiple or truncated candidate locations in the "
-                        "checked HadeethEnc source; a unique record cannot be established."
-                    ),
+                    explanation=Message.of("hadith.ambiguous_multiple_matches"),
                     truncated=search_truncated,
                 )
             if cited_record is None:
@@ -433,10 +415,7 @@ class HadeethEncVerifier:
                 (),
                 cited_reference=f"hadeethenc:{record_id}",
                 differences=self._wording_differences(quote, cited_record["hadeeth"]),
-                explanation=(
-                    "The HadeethEnc record exists, but the quote does not match its text. "
-                    "No conclusion about the report's authenticity is made."
-                ),
+                explanation=Message.of("hadith.mismatch_at_cited_reference"),
                 cited_record=cited_record,
             )
 
@@ -450,10 +429,7 @@ class HadeethEncVerifier:
                 occurrences,
                 cited_reference=None,
                 differences=(),
-                explanation=(
-                    "The wording has multiple or truncated candidate locations in the "
-                    "checked HadeethEnc source; a unique record cannot be established."
-                ),
+                explanation=Message.of("hadith.ambiguous_multiple_matches"),
                 truncated=search_truncated,
             )
         occurrence = occurrences[0]
@@ -468,11 +444,7 @@ class HadeethEncVerifier:
                 if status is not MatchStatus.EXACT_MATCH
                 else ()
             ),
-            explanation=(
-                f"The quote was located in the checked HadeethEnc.com {self._language} "
-                "selection. This textual comparison does not establish authenticity "
-                "or a religious ruling."
-            ),
+            explanation=Message.of("hadith.match", language=self._language),
         )
 
     @staticmethod
@@ -583,7 +555,7 @@ class HadeethEncVerifier:
         *,
         cited_reference: str | None,
         differences: tuple[WordingDifference, ...],
-        explanation: str,
+        explanation: Message,
         truncated: bool = False,
         cited_record: Mapping[str, Any] | None = None,
     ) -> VerificationResult:
@@ -607,7 +579,7 @@ class HadeethEncVerifier:
             matched_references=references,
             evidence=evidence,
             wording_differences=differences,
-            explanation=explanation,
+            **explanation.result_fields(),
             candidate_count=None if truncated else len(evidence_occurrences),
             evidence_truncated=truncated,
         )
@@ -621,28 +593,15 @@ class HadeethEncVerifier:
     ) -> VerificationResult:
         cited_reference = f"hadeethenc:{record_id}" if record_id is not None else None
         if record_id is not None:
-            explanation = (
-                "The cited HadeethEnc record ID was not located. This source is a curated "
-                "selection; no conclusion about the report's authenticity is made."
+            explanation = Message.of(
+                "hadith.record_not_found_search_truncated"
+                if search_truncated
+                else "hadith.record_not_found"
             )
-            if search_truncated:
-                explanation += (
-                    " The separate quote search was truncated, so its other candidate "
-                    "locations are incomplete."
-                )
         elif search_truncated:
-            explanation = (
-                "The wording was not located among the candidate records returned by a "
-                "truncated HadeethEnc search. The checked selection is curated and "
-                "non-comprehensive; this does not establish that the report is fabricated "
-                "or mawḍūʿ."
-            )
+            explanation = Message.of("hadith.not_found_search_truncated")
         else:
-            explanation = (
-                "The wording was not located in the checked HadeethEnc selection. "
-                "HadeethEnc is curated and non-comprehensive; this does not establish "
-                "that the report is fabricated or mawḍūʿ."
-            )
+            explanation = Message.of("hadith.not_found_in_checked_corpus")
         return VerificationResult(
             status=MatchStatus.NOT_FOUND_IN_CHECKED_CORPUS,
             source_type="hadith",
@@ -653,7 +612,7 @@ class HadeethEncVerifier:
             matched_references=(),
             evidence=(),
             wording_differences=(),
-            explanation=explanation,
+            **explanation.result_fields(),
             candidate_count=None if search_truncated else 0,
             evidence_truncated=search_truncated,
         )

@@ -9,6 +9,7 @@ from isnad_core.api.serializers import capabilities_response, verification_respo
 from isnad_core.engine import VerificationEngine
 from isnad_core.errors import SourceUnavailable
 from isnad_core.hadith import InvalidHadithReference
+from isnad_core.i18n import FALLBACK_LOCALE, normalize_locale
 from isnad_core.models import VerificationInput
 from isnad_core.quran import InvalidQuranReference
 
@@ -33,11 +34,13 @@ def create_mcp_server(engine: VerificationEngine | None = None):
         language: str,
         quote: str | None = None,
         reference: str | None = None,
+        locale: str = "en",
     ) -> VerifyResponse:
         """Check a Qur'an or HadeethEnc citation against the supported source edition.
 
         The result is textual correspondence only. Hadith match status is separate from
         HadeethEnc's explicitly sourced grade and attribution fields; no ruling is issued.
+        `locale` (`en` or `ar`) sets the language of human-readable fields only.
         """
 
         try:
@@ -71,13 +74,13 @@ def create_mcp_server(engine: VerificationEngine | None = None):
             ) from None
         except (InvalidHadithReference, InvalidQuranReference, ValueError):
             raise ToolError("The citation or source-local reference is invalid.") from None
-        return verification_response(result)
+        return verification_response(result, normalize_locale(locale) or FALLBACK_LOCALE)
 
     @server.tool()
-    def isnad_capabilities() -> CapabilitiesResponse:
+    def isnad_capabilities(locale: str = "en") -> CapabilitiesResponse:
         """List supported sources, languages, statuses, limits, and stream protocol."""
 
-        return capabilities_response(shared_engine)
+        return capabilities_response(shared_engine, normalize_locale(locale) or FALLBACK_LOCALE)
 
     return server
 

@@ -33,3 +33,13 @@ Hadith lookup uses the official [HadeethEnc API v1](https://hadeethenc.com/api-d
 - Source terms: do not modify, add to, or delete content; clearly refer to the publisher and HadeethEnc.com. Consult the current [API documentation](https://hadeethenc.com/api-docs/) and [terms and policies](https://hadeethenc.com/en/home) before redistribution or deployment.
 
 Hadith text, attribution, grade text, grade source, and named grader (if explicitly supplied) are separate fields. The API adapter does not infer a grader from an attribution. A report not located in this curated source is not labeled fabricated or mawḍūʿ.
+
+## Interface fonts
+
+The browser interface embeds subsets (Arabic, Latin and the Qur'anic annotation ranges) of these fonts, converted to WOFF2 and inlined by `frontend/build.py`. Each is licensed under the SIL Open Font License 1.1; the licence texts are in `frontend/fonts/`.
+
+| Font | Use | Copyright |
+| --- | --- | --- |
+| IBM Plex Sans Arabic (Regular, SemiBold) | Interface text, Arabic and Latin | © 2017 IBM Corp., Reserved Font Name "Plex" |
+| IBM Plex Mono (Regular) | References, status codes, checksums | © 2017 IBM Corp., Reserved Font Name "Plex" |
+| Amiri Quran (Regular) | Qur'an and hadith source text | © 2010–2022 The Amiri Quran Project Authors |

@@ -45,6 +45,8 @@ isnad_core = [
   "data/quranenc/english_saheeh/*.json",
   "api/templates/*.html",
   "api/static/*.html",
+  # The Next.js interface's static export (web/ → npm run export).
+  "api/web/**/*",
 ]
 
 [tool.pytest.ini_options]

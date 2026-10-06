@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import Protocol
 
 from isnad_core.hadith import HadeethEncClient, HadeethEncVerifier
+from isnad_core.i18n import Message
 from isnad_core.models import (
     MatchStatus,
     SourceMetadata,
@@ -116,10 +117,7 @@ class VerificationEngine:
                 matched_references=(),
                 evidence=(),
                 wording_differences=(),
-                explanation=(
-                    "No verifier is configured for this source and language. "
-                    "This is not a finding that the citation is false."
-                ),
+                **Message.of("engine.unsupported_source_or_language").result_fields(),
             )
         return adapter.verify(citation)
 

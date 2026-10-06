@@ -44,6 +44,13 @@ _EXCLUDED_DIRECTORIES = {
     "build",
     "dist",
     "target",
+    # The web interface's dependencies and generated builds: third-party,
+    # minified code (its URL parser assigns `password` fields) rather than
+    # anything written in this repository.
+    "node_modules",
+    ".next",
+    "out",
+    "_next",
 }
 _MAX_SCAN_BYTES = 10_000_000
 

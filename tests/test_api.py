@@ -367,3 +367,173 @@ def test_stream_websocket_malformed_citation_never_echoes_its_quote() -> None:
         }
         websocket.send_json({"type": "finish"})
         assert websocket.receive_json() == {"type": "stream_complete"}
+
+
+_LOCALIZED_VERIFY_CASES = [
+    pytest.param(
+        {
+            "source_type": "quran",
+            "language": "ar",
+            "quote": "بسم الله الرحمن الرحيم",
+            "reference": "1:1",
+        },
+        id="normalized_match",
+    ),
+    pytest.param(
+        {"source_type": "quran", "language": "en", "reference": "1:1"},
+        id="reference_found_without_quote",
+    ),
+    pytest.param(
+        {"source_type": "quran", "language": "ar", "quote": "كلمات غير موجودة إطلاقا هنا"},
+        id="not_found_in_checked_corpus",
+    ),
+    pytest.param(
+        {"source_type": "tafsir", "language": "en", "quote": "example report"},
+        id="unsupported_source_or_language",
+    ),
+]
+
+
+def _has_arabic(text: str) -> bool:
+    return any("\u0621" <= character <= "\u064a" for character in text)
+
+
+@pytest.mark.parametrize("payload", _LOCALIZED_VERIFY_CASES)
+def test_verify_status_is_locale_independent_and_explanation_is_localized(
+    payload: dict[str, str],
+) -> None:
+    with TestClient(app) as client:
+        default = client.post("/v1/verify", json=payload)
+        responses = {
+            locale: client.post("/v1/verify", json=payload, headers={"Accept-Language": locale})
+            for locale in ("en", "ar")
+        }
+
+    english, arabic = responses["en"].json(), responses["ar"].json()
+    for locale, response in responses.items():
+        assert response.status_code == 200
+        assert response.headers["content-language"] == locale
+        assert "accept-language" in response.headers["vary"].casefold()
+    assert english["status"] == arabic["status"]
+    assert english["explanation_key"] == arabic["explanation_key"] is not None
+    assert english["matched_references"] == arabic["matched_references"]
+    assert english["evidence"] == arabic["evidence"]
+    assert english["explanation"] != arabic["explanation"]
+    assert _has_arabic(arabic["explanation"])
+    assert default.json() == english
+    if english["source_metadata"] is not None:
+        assert english["source_metadata"]["source_id"] == arabic["source_metadata"]["source_id"]
+        assert (
+            english["source_metadata"]["display_name"] != arabic["source_metadata"]["display_name"]
+        )
+
+
+_LOCALIZED_ERROR_CASES = [
+    pytest.param(
+        {"source_type": "quran", "language": "ar", "quote": "ا", "reference": "115:1"},
+        422,
+        "invalid_reference",
+        id="invalid_quran_reference",
+    ),
+    pytest.param(
+        {"source_type": "hadith", "language": "ar", "quote": "ا", "reference": "bukhari:1"},
+        422,
+        "invalid_reference",
+        id="invalid_hadith_reference",
+    ),
+    pytest.param(
+        {"source_type": "quran", "language": "ar"},
+        422,
+        "invalid_request",
+        id="invalid_request",
+    ),
+    pytest.param(
+        {"source_type": "quran", "language": "ar", "quote": "ا", "padding": "x" * (64 * 1024)},
+        413,
+        "request_too_large",
+        id="request_too_large",
+    ),
+]
+
+
+@pytest.mark.parametrize(("payload", "status_code", "code"), _LOCALIZED_ERROR_CASES)
+def test_error_code_is_locale_independent_and_message_is_localized(
+    payload: dict[str, str], status_code: int, code: str
+) -> None:
+    with TestClient(app) as client:
+        responses = {
+            locale: client.post("/v1/verify", json=payload, headers={"Accept-Language": locale})
+            for locale in ("en", "ar")
+        }
+
+    english, arabic = responses["en"], responses["ar"]
+    assert english.status_code == arabic.status_code == status_code
+    assert english.json()["error"]["code"] == arabic.json()["error"]["code"] == code
+    assert english.json()["error"]["details"] == arabic.json()["error"]["details"]
+    assert english.json()["error"]["message"] != arabic.json()["error"]["message"]
+    assert _has_arabic(arabic.json()["error"]["message"])
+    assert arabic.headers["content-language"] == "ar"
+
+
+def test_lang_query_overrides_accept_language() -> None:
+    payload = {"source_type": "quran", "language": "en", "reference": "1:1"}
+    with TestClient(app) as client:
+        arabic = client.post(
+            "/v1/verify", params={"lang": "ar"}, json=payload, headers={"Accept-Language": "en"}
+        )
+        english = client.post(
+            "/v1/verify", params={"lang": "en"}, json=payload, headers={"Accept-Language": "ar"}
+        )
+
+    assert arabic.headers["content-language"] == "ar"
+    assert _has_arabic(arabic.json()["explanation"])
+    assert english.headers["content-language"] == "en"
+    assert not _has_arabic(english.json()["explanation"])
+
+
+def test_capabilities_localize_labels_and_source_names() -> None:
+    with TestClient(app) as client:
+        english = client.get("/v1/capabilities").json()
+        arabic = client.get("/v1/capabilities", params={"lang": "ar"}).json()
+
+    assert english["locales"] == arabic["locales"] == ["ar", "en"]
+    assert (english["locale"], arabic["locale"]) == ("en", "ar")
+    assert english["statuses"] == arabic["statuses"]
+    assert [item["status"] for item in arabic["status_details"]] == arabic["statuses"]
+    labels = {item["status"]: item["label"] for item in arabic["status_details"]}
+    assert labels["exact_match"] == "مطابقة تامة"
+    assert labels["not_found_in_checked_corpus"] == "غير موجود في المصدر المفحوص"
+    english_labels = {item["status"]: item["label"] for item in english["status_details"]}
+    assert english_labels["exact_match"] == "Exact match"
+    names = {item["source_id"]: item["display_name"] for item in arabic["sources"]}
+    assert names["tanzil-quran-uthmani"] == "مشروع تنزيل — الرسم العثماني"
+    assert names["quranenc-english-saheeh"] == (
+        "موسوعة القرآن الكريم المترجمة — الترجمة الإنجليزية (صحيح)"
+    )
+    assert names["hadeethenc-api-v1"] == "موسوعة الأحاديث النبوية"
+    hadith_notes = {
+        item["coverage_note"] for item in arabic["sources"] if item["source_type"] == "hadith"
+    }
+    assert all(note and _has_arabic(note) for note in hadith_notes)
+    assert english["sources"][0]["name"] == arabic["sources"][0]["name"]
+
+
+def test_stream_websocket_localizes_results_with_lang_query() -> None:
+    source_text = QuranCorpus.load_default().verses_by_reference["1:1"].text
+    citation = (
+        f"[[ISNAD-CITATION source=quran language=ar reference=1:1]]{source_text}[[/ISNAD-CITATION]]"
+    )
+    results = {}
+    with TestClient(app) as client:
+        for locale in ("en", "ar"):
+            with client.websocket_connect(f"/v1/stream?lang={locale}") as websocket:
+                websocket.send_json({"type": "chunk", "text": citation})
+                assert websocket.receive_json()["type"] == "citation_checking"
+                results[locale] = websocket.receive_json()["result"]
+                websocket.send_json({"type": "finish"})
+                assert websocket.receive_json() == {"type": "stream_complete"}
+
+    assert results["en"]["status"] == results["ar"]["status"] == "exact_match"
+    assert results["en"]["explanation_key"] == results["ar"]["explanation_key"]
+    assert results["en"]["explanation"] != results["ar"]["explanation"]
+    assert _has_arabic(results["ar"]["explanation"])

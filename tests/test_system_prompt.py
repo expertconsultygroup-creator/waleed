@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from isnad_core.api.app import create_app
 from isnad_core.models import MatchStatus
-from isnad_core.prompt import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+from isnad_core.prompt import ARABIC_PREFERENCE_LINE, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
 from isnad_core.streaming import CLOSE_MARKER, OPEN_MARKER
 
 
@@ -32,6 +32,26 @@ def test_prompt_separates_match_status_from_authenticity() -> None:
     assert "fabricated or mawḍūʿ" in SYSTEM_PROMPT
     for status in MatchStatus:
         assert status.value in SYSTEM_PROMPT
+
+
+def test_prompt_keeps_quotations_in_their_source_language() -> None:
+    assert SYSTEM_PROMPT_VERSION == "isnad-citation-protocol-v2"
+    assert "Answer in the language the user writes in." in SYSTEM_PROMPT
+    assert "never translate inside citation markers" in SYSTEM_PROMPT
+    assert ARABIC_PREFERENCE_LINE not in SYSTEM_PROMPT
+
+
+def test_arabic_prompt_appends_one_answer_language_line() -> None:
+    with TestClient(create_app()) as client:
+        arabic = client.get("/v1/system-prompt", params={"lang": "ar"})
+        english = client.get("/v1/system-prompt", params={"lang": "en"})
+
+    assert arabic.status_code == 200
+    assert arabic.json()["version"] == SYSTEM_PROMPT_VERSION
+    assert arabic.json()["prompt"] == f"{SYSTEM_PROMPT}\n{ARABIC_PREFERENCE_LINE}"
+    assert ARABIC_PREFERENCE_LINE == "أجب بالعربية الفصحى ما لم يكتب المستخدم بلغة أخرى."
+    assert arabic.headers["content-language"] == "ar"
+    assert english.json()["prompt"] == SYSTEM_PROMPT
 
 
 def test_prompt_is_served_with_its_version_and_markers() -> None:

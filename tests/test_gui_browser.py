@@ -1,4 +1,5 @@
-"""Browser smoke tests for the served interface, skipped where no browser is installed.
+"""Browser smoke tests for the classic interface (served at /classic), skipped where
+no browser is installed. The Next.js interface at / has its own: tests/test_web_browser.py.
 
 The rest of the suite checks the interface's markup and text. These drive the
 real page against the real app — and, for the chat surface, against a scripted
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import socket
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -21,67 +22,16 @@ import pytest
 import uvicorn
 
 from isnad_core.api.app import create_app
+from tests.conftest import _free_port
 
 pytest.importorskip("playwright.sync_api", reason="playwright is not installed")
 
 _PROVIDER_PATH = Path(__file__).resolve().parents[1] / "examples" / "fake_openai_provider.py"
 
-
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
-
-
-@pytest.fixture(scope="module")
-def server_url() -> Iterator[str]:
-    """Serve the real app on a loopback port for the duration of the module."""
-
-    port = _free_port()
-    config = uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 20
-    while not server.started and time.monotonic() < deadline:
-        time.sleep(0.05)
-    if not server.started:
-        pytest.skip("the API server did not start in time")
-    yield f"http://127.0.0.1:{port}/"
-    server.should_exit = True
-    thread.join(timeout=10)
-
-
-@pytest.fixture(scope="module")
-def scripted_model_url() -> Iterator[str]:
-    """Serve the scripted model double used by the chat test."""
-
-    spec = importlib.util.spec_from_file_location("isnad_fake_provider_browser", _PROVIDER_PATH)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    port = _free_port()
-    server = module.ThreadingHTTPServer(("127.0.0.1", port), module.Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{port}/v1"
-    server.shutdown()
-    server.server_close()
-    thread.join(timeout=5)
-
-
-@pytest.fixture(scope="module")
-def browser():  # noqa: ANN201 - playwright types are optional dependencies
-    from playwright.sync_api import Error, sync_playwright
-
-    with sync_playwright() as playwright:
-        try:
-            instance = playwright.chromium.launch()
-        except Error as exc:  # pragma: no cover - depends on the host image
-            pytest.skip(f"chromium is not available for playwright: {exc}")
-        yield instance
-        instance.close()
+# The interface opens in Arabic. Tests that read its English copy say so first;
+# the Arabic tests below leave the default alone.
+LANG_KEY = "isnad.gui.lang.v1"
+ENGLISH = {LANG_KEY: "en"}
 
 
 @pytest.fixture(scope="module")
@@ -135,17 +85,19 @@ def test_interface_reports_connection_and_verifies_by_hand_without_console_error
     server_url, browser
 ) -> None:
     page = browser.new_page(viewport={"width": 1400, "height": 950})
+    _seed_storage(page, **ENGLISH)
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
 
-    page.goto(server_url, wait_until="load")
+    page.goto(server_url + "classic", wait_until="load")
     page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
-    assert "API READY" in page.inner_text("#apiBadge")
+    assert "api ready" in page.inner_text("#apiBadge").lower()
 
-    # The page opens on the chat surface, and says plainly that no model is set up.
-    assert page.locator(".empty__title").inner_text() == "Connect a model to chat"
-    assert "NO MODEL" in page.inner_text("#modelBadge")
+    # Served over http, the page chats through the model this server proxies
+    # (/v1/model), so it opens ready to ask rather than asking for a model.
+    assert page.locator(".empty__title").inner_text() == "Ask anything"
+    assert "glm" in page.inner_text("#modelBadge").lower()
 
     # The hand-check surface keeps working without any model at all.
     page.click("#modeVerify")
@@ -192,6 +144,7 @@ def test_chat_holds_quotations_until_the_source_answers(
     }
     _seed_storage(
         context,
+        **ENGLISH,
         **{"isnad.gui.settings.v2": settings, "isnad.gui.modelkey.v1": "test-key"},
     )
     page = context.new_page()
@@ -199,9 +152,8 @@ def test_chat_holds_quotations_until_the_source_answers(
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
 
-    page.goto(server_url, wait_until="load")
+    page.goto(server_url + "classic", wait_until="load")
     page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
-    # The badge is uppercased for display, so compare without case.
     assert "fake-citation-model" in page.inner_text("#modelBadge").lower()
     assert page.locator(".empty__title").inner_text() == "Ask anything"
 
@@ -250,7 +202,7 @@ def test_chat_holds_quotations_until_the_source_answers(
     # that was submitted, never as source wording: it may appear in the quoted
     # text row and on the submitted side of a difference, and nowhere else.
     assert "Everlasting Guardian" in second
-    assert "QUOTED TEXT" in second
+    assert "quoted text" in second.lower()
     for index in range(page.locator(".evidence").count()):
         assert "Everlasting Guardian" not in page.locator(".evidence").nth(index).inner_text()
     for index in range(page.locator('.diff__text[data-side="source"]').count()):
@@ -266,11 +218,12 @@ def test_chat_holds_quotations_until_the_source_answers(
 
 def test_settings_dialog_opens_on_a_visible_panel(server_url, browser) -> None:
     page = browser.new_page(viewport={"width": 1400, "height": 950})
+    _seed_storage(page, **ENGLISH)
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
 
-    page.goto(server_url, wait_until="load")
+    page.goto(server_url + "classic", wait_until="load")
     page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
 
     # A dialog whose panels are all hidden looks like an empty box: the fields of
@@ -289,7 +242,7 @@ def test_settings_dialog_opens_on_a_visible_panel(server_url, browser) -> None:
 
     page.click('[data-settings-tab="appearance"]')
     assert page.locator("#tsSwitch").is_visible()
-    assert page.locator('[data-dir="rtl"]').is_visible()
+    assert page.locator('[data-lang-opt="ar"]').is_visible()
 
     # Exactly one panel is shown at a time, whichever tab is selected.
     visible_panels = page.evaluate(
@@ -339,6 +292,7 @@ def test_streamed_and_verified_text_cannot_inject_markup(server_url, browser) ->
     context = browser.new_context(viewport={"width": 1400, "height": 950})
     _seed_storage(
         context,
+        **ENGLISH,
         **{
             "isnad.gui.settings.v2": {
                 "apiBase": "",
@@ -359,7 +313,7 @@ def test_streamed_and_verified_text_cannot_inject_markup(server_url, browser) ->
     page.on("pageerror", lambda e: errors.append(str(e)))
 
     try:
-        page.goto(server_url, wait_until="load")
+        page.goto(server_url + "classic", wait_until="load")
         page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
         page.fill("#composerInput", "Show me markup handling.")
         page.click("#sendBtn")
@@ -394,11 +348,12 @@ def test_model_key_is_stored_only_when_the_user_asks_for_it(server_url, browser)
     """The key lives in the tab unless "remember" is ticked, and never in the transcript."""
 
     page = browser.new_page(viewport={"width": 1400, "height": 950})
+    _seed_storage(page, **ENGLISH)
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
 
-    page.goto(server_url, wait_until="load")
+    page.goto(server_url + "classic", wait_until="load")
     page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
 
     def configure(key: str, remember: bool) -> None:
@@ -448,6 +403,7 @@ def test_a_marked_quotation_is_held_while_it_is_being_checked(
     context = browser.new_context(viewport={"width": 1400, "height": 950})
     _seed_storage(
         context,
+        **ENGLISH,
         **{
             "isnad.gui.settings.v2": {
                 "apiBase": slow_verify_api,
@@ -466,7 +422,7 @@ def test_a_marked_quotation_is_held_while_it_is_being_checked(
     page.on("pageerror", lambda e: errors.append(str(e)))
 
     try:
-        page.goto(slow_verify_api, wait_until="load")
+        page.goto(slow_verify_api + "classic", wait_until="load")
         page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
         page.fill("#composerInput", "Quote Sūrat al-Ikhlāṣ.")
         page.click("#sendBtn")
@@ -500,11 +456,16 @@ def test_interface_states_that_a_source_failure_decided_nothing(server_url, brow
     # page would be overwritten by that page's own save. The key is the one the
     # previous build wrote, which the interface still reads.
     context = browser.new_context(viewport={"width": 1400, "height": 950})
-    settings = {"apiBase": "http://127.0.0.1:8123", "direction": "ltr", "showTimestamps": True}
-    _seed_storage(context, **{"isnad.gui.settings.v1": settings})
+    # A port nothing listens on: a fixed one may be taken on a developer machine.
+    settings = {
+        "apiBase": f"http://127.0.0.1:{_free_port()}",
+        "direction": "ltr",
+        "showTimestamps": True,
+    }
+    _seed_storage(context, **ENGLISH, **{"isnad.gui.settings.v1": settings})
     page = context.new_page()
 
-    page.goto(server_url, wait_until="load")
+    page.goto(server_url + "classic", wait_until="load")
     page.wait_for_selector('#apiBadge[data-state="unavailable"]', timeout=20000)
 
     page.click("#modeVerify")
@@ -530,7 +491,7 @@ def test_interface_states_that_a_source_failure_decided_nothing(server_url, brow
 def test_narrow_layout_keeps_the_drawer_above_its_scrim(server_url, browser) -> None:
     page = browser.new_page(viewport={"width": 430, "height": 860})
 
-    page.goto(server_url, wait_until="load")
+    page.goto(server_url + "classic", wait_until="load")
     page.wait_for_selector("#menuBtn")
     page.click("#menuBtn")
     page.wait_for_timeout(300)
@@ -543,3 +504,144 @@ def test_narrow_layout_keeps_the_drawer_above_its_scrim(server_url, browser) -> 
     assert page.locator("#shell").get_attribute("data-sidebar") == "collapsed"
 
     page.close()
+
+
+def test_interface_opens_in_arabic_right_to_left_and_switches_language(server_url, browser) -> None:
+    """Arabic is the default; the switch flips direction and survives a reload."""
+
+    page = browser.new_page(viewport={"width": 1400, "height": 950})
+    errors: list[str] = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    page.goto(server_url + "classic", wait_until="load")
+    page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
+    root = page.locator("html")
+    assert root.get_attribute("lang") == "ar"
+    assert root.get_attribute("dir") == "rtl"
+    assert page.locator(".empty__title").inner_text() == "اسأل عن أي شيء"
+    # The disclaimer is stated in Arabic too, not only in the English build.
+    note = page.locator(".composer__note").inner_text()
+    assert "ليست حكمًا على صحة الحديث" in note
+    # In right-to-left the sidebar is on the right of the page.
+    sidebar = page.locator("#sidebar").bounding_box()
+    surface = page.locator("#surface").bounding_box()
+    assert sidebar and surface and sidebar["x"] > surface["x"]
+
+    # A reference typed in an Arabic page keeps its digit order.
+    page.click("#modeVerify")
+    page.fill("#composerInput", "بسم الله الرحمن الرحيم")
+    page.fill("#referenceInput", "1:1")
+    page.click("#sendBtn")
+    page.wait_for_selector(".result__status code", timeout=30000)
+    assert page.locator(".evidence__text--scripture").count() >= 1
+    assert page.locator(".result__grid bdi.ref").first.inner_text() == "1:1"
+    # The API answered in Arabic as well: the explanation is the server's.
+    assert re.search(r"[؀-ۿ]", page.locator(".result__note.rich").last.inner_text())
+
+    page.click("#langBtn")
+    assert root.get_attribute("lang") == "en"
+    assert root.get_attribute("dir") == "ltr"
+    assert "Normalized" in page.locator(".result__status").last.inner_text() or (
+        "normalization" in page.locator(".result__status").last.inner_text()
+    )
+    page.reload(wait_until="load")
+    page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
+    assert page.locator("html").get_attribute("dir") == "ltr"
+    assert page.inner_text("#langBtnLabel") == "عربي"
+    assert errors == []
+    page.close()
+
+
+def test_dashboard_summarises_this_devices_history(server_url, browser) -> None:
+    """Counts, the flagged list and the way back to the conversation."""
+
+    now = int(time.time() * 1000)
+
+    def report(status: str, quote: str, reference: str) -> dict[str, object]:
+        return {
+            "status": status,
+            "sourceType": "quran",
+            "language": "ar",
+            "sourceMetadata": None,
+            "submittedQuote": quote,
+            "citedReference": reference,
+            "matchedReferences": [reference] if status == "normalized_match" else [],
+            "evidence": [],
+            "wordingDifferences": [],
+            "explanation": "",
+            "candidateCount": 1,
+            "evidenceTruncated": False,
+        }
+
+    state = {
+        "activeId": "seed-a",
+        "mode": "verify",
+        "chats": [
+            {
+                "id": "seed-a",
+                "title": "Seeded checks",
+                "createdAt": now,
+                "updatedAt": now,
+                "items": [
+                    {
+                        "id": "item-match",
+                        "kind": "report",
+                        "role": "tool",
+                        "status": "complete",
+                        "createdAt": now - 1000,
+                        "durationMs": 12,
+                        "report": report("normalized_match", "بسم الله", "1:1"),
+                    },
+                    {
+                        "id": "item-flagged",
+                        "kind": "report",
+                        "role": "tool",
+                        "status": "complete",
+                        "createdAt": now,
+                        "durationMs": 20,
+                        "report": report("mismatch_at_cited_reference", "seeded mismatch", "112:2"),
+                    },
+                ],
+            }
+        ],
+    }
+    context = browser.new_context(viewport={"width": 1400, "height": 950})
+    _seed_storage(context, **ENGLISH, **{"isnad.gui.state.v2": state})
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    page.goto(server_url + "classic#/dashboard", wait_until="load")
+    page.wait_for_selector(".kpis", timeout=20000)
+    assert page.locator("#shell").get_attribute("data-view") == "dashboard"
+    assert page.locator("#navDashboard").get_attribute("aria-current") == "page"
+    values = page.locator(".kpi__value").all_inner_texts()
+    assert values[0] == "2"
+    assert values[1] == "50%"
+    assert values[2] == "1"
+    rows = page.locator(".dtable tbody tr")
+    assert rows.count() == 1
+    assert "seeded mismatch" in rows.first.inner_text()
+    assert "112:2" in rows.first.inner_text()
+    # Every chart carries a table a screen reader can read.
+    assert page.locator(".card table.sr-only").count() >= 3
+
+    page.click("[data-open-chat]")
+    # The view follows the hashchange event, which fires after the hash is set.
+    page.wait_for_function(
+        "() => location.hash === '#/chat'"
+        " && document.querySelector('#shell').dataset.view === 'chat'"
+    )
+    assert page.locator("#dashView").is_hidden()
+
+    # Server scope is off unless the deployment enables it, and says so.
+    page.goto(server_url + "classic#/dashboard", wait_until="load")
+    page.wait_for_selector(".kpis", timeout=20000)
+    page.click('[data-dash-scope="server"]')
+    page.wait_for_selector(".dash__note--warn")
+    assert "ISNAD_STATS_ENABLED" in page.locator(".dash__note--warn").inner_text()
+    assert errors == []
+    page.close()
+    context.close()

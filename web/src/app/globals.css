@@ -1,0 +1,276 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* ============================================================================
+   Isnad — Emerald & Gold
+
+   Deep "mihrab" emerald frames the app (sidebar, hero panels). Emerald is the
+   action colour. Gold is ornament only — the lattice, the seal, hairlines —
+   and never carries body text on light surfaces. Ivory appears in one place:
+   behind Qur'an and hadith text, as a mushaf page would.
+
+   Status colours are their own family so a result is never confused with
+   chrome: jade (matches), amber (partial / elsewhere), crimson (does not
+   match / not found), lapis (informational).
+   ========================================================================= */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-mihrab: var(--mihrab);
+  --color-mihrab-2: var(--mihrab-2);
+  --color-mihrab-foreground: var(--mihrab-foreground);
+  --color-mihrab-muted: var(--mihrab-muted);
+  --color-gold: var(--gold);
+  --color-gold-ink: var(--gold-ink);
+  --color-gold-soft: var(--gold-soft);
+  --color-mushaf: var(--mushaf);
+  --color-mushaf-line: var(--mushaf-line);
+  --color-mushaf-ink: var(--mushaf-ink);
+  --color-raised: var(--raised);
+
+  --color-match: var(--match);
+  --color-match-soft: var(--match-soft);
+  --color-partial: var(--partial);
+  --color-partial-soft: var(--partial-soft);
+  --color-mismatch: var(--mismatch);
+  --color-mismatch-soft: var(--mismatch-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --color-chart-1: var(--match);
+  --color-chart-2: var(--mismatch);
+  --color-chart-3: var(--info);
+  --color-chart-4: var(--partial);
+  --color-chart-5: var(--gold);
+
+  /* Literal family names: @theme inline resolves at parse time. */
+  --font-sans: "Readex Pro", "Readex Pro Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Noto Kufi Arabic", "Noto Kufi Arabic Fallback", "Readex Pro", ui-sans-serif, sans-serif;
+  --font-scripture: "Amiri Quran", "Amiri Quran Fallback", "Geeza Pro", "Noto Naskh Arabic", serif;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.4);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  --background: #f2f5f2;
+  --foreground: #13251e;
+  --card: #ffffff;
+  --card-foreground: #13251e;
+  --popover: #ffffff;
+  --popover-foreground: #13251e;
+  --raised: #f8faf8;
+  --primary: #0e6b4f;
+  --primary-foreground: #ffffff;
+  --secondary: #e7efe9;
+  --secondary-foreground: #0d4a37;
+  --muted: #edf2ee;
+  --muted-foreground: #56685f;
+  --accent: #e7efe9;
+  --accent-foreground: #0d4a37;
+  --destructive: #b23a32;
+  --border: #dbe4dd;
+  --input: #d3ddd6;
+  --ring: #0e6b4f;
+
+  --mihrab: #0a3b2c;
+  --mihrab-2: #0f4a37;
+  --mihrab-foreground: #eaf2ed;
+  --mihrab-muted: #9fbcae;
+  --gold: #c9a24a;
+  --gold-ink: #85651c;
+  --gold-soft: rgb(201 162 74 / 0.16);
+  --mushaf: #fcf8ee;
+  --mushaf-line: #e6d6a8;
+  --mushaf-ink: #1b2a22;
+
+  --match: #12805a;
+  --match-soft: #e2f2ea;
+  --partial: #a36200;
+  --partial-soft: #fbf0db;
+  --mismatch: #b23a32;
+  --mismatch-soft: #fbe8e5;
+  --info: #2d5e8e;
+  --info-soft: #e6eef7;
+
+  --shadow-float: 0 18px 40px -22px rgb(10 59 44 / 0.35), 0 2px 6px rgb(10 59 44 / 0.06);
+}
+
+.dark {
+  --background: #06130e;
+  --foreground: #e6eee9;
+  --card: #0b1c15;
+  --card-foreground: #e6eee9;
+  --popover: #0e2219;
+  --popover-foreground: #e6eee9;
+  --raised: #0f241b;
+  --primary: #34b486;
+  --primary-foreground: #03120c;
+  --secondary: #12301f;
+  --secondary-foreground: #bfe3d2;
+  --muted: #10261c;
+  --muted-foreground: #92a99e;
+  --accent: #143425;
+  --accent-foreground: #d8ece2;
+  --destructive: #f08a7c;
+  --border: rgb(230 238 233 / 0.09);
+  --input: rgb(230 238 233 / 0.14);
+  --ring: #34b486;
+
+  --mihrab: #071f17;
+  --mihrab-2: #0b2b20;
+  --mihrab-foreground: #e6eee9;
+  --mihrab-muted: #86a596;
+  --gold: #d9b862;
+  --gold-ink: #e0c27a;
+  --gold-soft: rgb(217 184 98 / 0.14);
+  --mushaf: #15241c;
+  --mushaf-line: rgb(217 184 98 / 0.32);
+  --mushaf-ink: #f2ead4;
+
+  --match: #4fca97;
+  --match-soft: rgb(79 202 151 / 0.13);
+  --partial: #e8b65a;
+  --partial-soft: rgb(232 182 90 / 0.13);
+  --mismatch: #f08a7c;
+  --mismatch-soft: rgb(240 138 124 / 0.13);
+  --info: #86b6e6;
+  --info-soft: rgb(134 182 230 / 0.13);
+
+  --shadow-float: 0 22px 50px -24px rgb(0 0 0 / 0.8), 0 2px 8px rgb(0 0 0 / 0.35);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "kern" 1;
+  }
+  /* Arabic reads larger and needs room for tashkeel. Never letter-spaced. */
+  html[lang="ar"] body {
+    font-size: 16.5px;
+    line-height: 1.8;
+    letter-spacing: 0;
+  }
+  html[lang="en"] body {
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-heading);
+    text-wrap: balance;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--gold) 35%, transparent);
+  }
+}
+
+@layer components {
+  /* References, codes and versions: left-to-right and isolated, so "2:255"
+     never reorders inside an Arabic sentence. Tabular digits keep columns. */
+  .ref {
+    direction: ltr;
+    unicode-bidi: isolate;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+
+  /* The mushaf page: ivory, a double gold rule, the Qur'anic face. */
+  .mushaf {
+    background: var(--mushaf);
+    color: var(--mushaf-ink);
+    box-shadow:
+      inset 0 0 0 1px var(--mushaf-line),
+      inset 0 0 0 5px var(--mushaf),
+      inset 0 0 0 6px color-mix(in oklch, var(--mushaf-line) 70%, transparent);
+  }
+  .scripture {
+    font-family: var(--font-scripture);
+    line-height: 2.25;
+    word-spacing: 0.04em;
+  }
+
+  .prose-chat p { margin-block: 0 0.75em; }
+  .prose-chat p:last-child { margin-block-end: 0; }
+  .prose-chat ul, .prose-chat ol { margin-block: 0 0.75em; padding-inline-start: 1.4em; }
+  .prose-chat ul { list-style: disc; }
+  .prose-chat ol { list-style: decimal; }
+  .prose-chat li::marker { color: var(--gold); }
+  .prose-chat h2, .prose-chat h3, .prose-chat h4 { font-weight: 700; margin-block: 1em 0.4em; line-height: 1.4; }
+  .prose-chat h2 { font-size: 1.25em; } .prose-chat h3 { font-size: 1.12em; }
+  .prose-chat blockquote { border-inline-start: 3px solid var(--gold); padding: 0.4em 0.9em; margin-block: 0 0.8em; background: var(--muted); border-radius: 0.5rem; }
+  .prose-chat a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+  .prose-chat code { font-size: 0.88em; padding: 0.1em 0.4em; border-radius: 0.35rem; background: var(--muted); direction: ltr; unicode-bidi: isolate; }
+  .prose-chat pre { direction: ltr; text-align: left; background: var(--muted); padding: 0.8em 1em; border-radius: 0.75rem; overflow-x: auto; margin-block: 0 0.8em; font-size: 0.85em; }
+  .prose-chat pre code { background: none; padding: 0; }
+  .prose-chat hr { border: 0; border-top: 1px solid var(--border); margin-block: 1.2em; }
+}
+
+@layer utilities {
+  .shadow-float { box-shadow: var(--shadow-float); }
+  .scrollbar-quiet { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+}
+
+/* One orchestrated moment: the rosette on the welcome screen draws itself
+   once. Everything else moves only in answer to an action. */
+@keyframes draw-in {
+  from { stroke-dashoffset: 1; opacity: 0.2; }
+  to { stroke-dashoffset: 0; opacity: 1; }
+}
+.draw-once path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-in 2.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.draw-once path:nth-child(2) { animation-delay: 0.25s; }
+.draw-once path:nth-child(3) { animation-delay: 0.5s; }
+.draw-once path:nth-child(4) { animation-delay: 0.75s; }
+.draw-once path:nth-child(5) { animation-delay: 1s; }
+
+@keyframes trace {
+  0% { stroke-dashoffset: 1; }
+  55% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -1; }
+}
+.trace path {
+  stroke-dasharray: 1;
+  animation: trace 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draw-once path, .trace path { animation: none; stroke-dashoffset: 0; opacity: 1; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

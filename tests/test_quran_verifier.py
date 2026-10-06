@@ -87,6 +87,7 @@ def test_unlocated_text_is_limited_to_checked_source(verifier: QuranArabicVerifi
     assert result.status is MatchStatus.NOT_FOUND_IN_CHECKED_CORPUS
     assert result.evidence == ()
     assert "does not establish" in result.explanation
+    assert result.explanation_key == "quran.not_found_in_checked_corpus"
 
 
 def test_repeated_phrase_without_reference_is_ambiguous(verifier: QuranArabicVerifier) -> None:

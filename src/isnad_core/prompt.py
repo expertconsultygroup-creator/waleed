@@ -18,7 +18,7 @@ from __future__ import annotations
 from isnad_core.models import MatchStatus
 from isnad_core.streaming import CLOSE_MARKER, OPEN_MARKER
 
-SYSTEM_PROMPT_VERSION = "isnad-citation-protocol-v1"
+SYSTEM_PROMPT_VERSION = "isnad-citation-protocol-v2"
 
 # A literal marker inside a quote is written with a backslash escape. The prompt
 # shows the escape instead of describing it.
@@ -59,6 +59,10 @@ Rules for the markers:
 - Keep each marked block self-contained: a complete quote, a complete closing
   marker, no block left open at the end of your answer.
 
+LANGUAGE
+- Answer in the language the user writes in. Quotations stay verbatim in their
+  source language; never translate inside citation markers.
+
 REFERENCE FORMATS
 - Qur'an: `surah:ayah`, for example `2:255`, or a bounded range such as
   `2:255-257`.
@@ -90,13 +94,25 @@ BOUNDARIES
   nothing was disproved.
 """.strip()
 
+# Appended when the client's interface is in Arabic. It sets a default answer
+# language only; the LANGUAGE rule above still keeps quotations verbatim.
+ARABIC_PREFERENCE_LINE = "أجب بالعربية الفصحى ما لم يكتب المستخدم بلغة أخرى."
 
-def system_prompt_response() -> dict[str, str]:
+
+def system_prompt(locale: str = "en") -> str:
+    """Return the prompt, with the Arabic answer preference appended for ``ar``."""
+
+    if locale == "ar":
+        return f"{SYSTEM_PROMPT}\n{ARABIC_PREFERENCE_LINE}"
+    return SYSTEM_PROMPT
+
+
+def system_prompt_response(locale: str = "en") -> dict[str, str]:
     """Return the prompt with the exact markers it depends on, for client checks."""
 
     return {
         "version": SYSTEM_PROMPT_VERSION,
-        "prompt": SYSTEM_PROMPT,
+        "prompt": system_prompt(locale),
         "block_open_marker": OPEN_MARKER,
         "block_close_marker": CLOSE_MARKER,
     }

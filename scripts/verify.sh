@@ -35,10 +35,13 @@ with zipfile.ZipFile(wheels[0]) as wheel:
         "isnad_core/data/quranenc/english_saheeh/surah_114.json",
         "isnad_core/api/templates/gui.html",
         "isnad_core/api/static/isnad-gui.html",
+        "isnad_core/api/web/index.html",
+        "isnad_core/api/web/dashboard/index.html",
     }
     missing = required - names
     assert not missing, f"wheel is missing package data: {sorted(missing)}"
-    assert not any(name.startswith(("tests/", "scripts/")) for name in names)
+    assert not any(name.startswith(("tests/", "scripts/", "web/")) for name in names)
+    assert any(name.startswith("isnad_core/api/web/_next/static/") for name in names)
     manifest = json.loads(wheel.read("isnad_core/data/quran/manifest.json"))
     corpus = wheel.read("isnad_core/data/quran/tanzil-uthmani-v1.1.xml")
     assert hashlib.sha256(corpus).hexdigest() == manifest["sha256"]

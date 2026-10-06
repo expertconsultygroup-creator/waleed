@@ -7,7 +7,8 @@ scripted provider from examples/. Output goes to docs/screenshots/.
 
 Screenshots are documentation, so they are captured from a running build rather
 than assembled by hand: if a selector or a status label changes, re-running this
-script updates the images the README points at.
+script updates the images the README points at. The interface opens in Arabic,
+so most shots are Arabic; one chat and the hadith check show the English build.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ PROVIDER = ROOT / "examples" / "fake_openai_provider.py"
 QURAN_AR_QUOTE = "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ"
 HADITH_EN_QUOTE = "Verily, the reward of deeds depends on the intention"
 CHAT_PROMPT = "Quote Sūrat al-Ikhlāṣ with its reference."
+CHAT_PROMPT_AR = "اذكر سورة الإخلاص مع موضعها."
 
 
 def _free_port() -> int:
@@ -65,20 +67,24 @@ def _start_scripted_model() -> tuple[str, object]:
 
 
 def _wait_ready(page) -> None:
-    """Wait for the connection chip to report ready.
-
-    Narrow layouts hide the chip, so the wait is on the attribute rather than on
-    visibility.
-    """
+    """Wait for the connection chip to report ready (by attribute: narrow layouts hide it)."""
 
     page.wait_for_function(
-        "() => { const el = document.querySelector('#apiBadge');"
-        " return !!el && el.dataset.state === 'ready'; }",
+        "() => document.querySelector('#api-status')?.dataset.state === 'ready'"
+        " || document.querySelector('#apiBadge')?.dataset.state === 'ready'",
         timeout=20000,
     )
 
 
-def _context(browser, *, theme: str, model_base: str | None, width: int = 1440, height: int = 900):
+def _context(
+    browser,
+    *,
+    theme: str,
+    model_base: str | None,
+    lang: str = "ar",
+    width: int = 1440,
+    height: int = 900,
+):
     context = browser.new_context(
         viewport={"width": width, "height": height},
         device_scale_factor=2,
@@ -89,33 +95,39 @@ def _context(browser, *, theme: str, model_base: str | None, width: int = 1440, 
         "modelName": "fake-citation-model" if model_base else "",
         "modelRememberKey": False,
         "temperature": 0.3,
-        "direction": "ltr",
         "showTimestamps": True,
     }
+    # The page stores every value JSON-encoded, the theme and language included.
     context.add_init_script(
         f"window.localStorage.setItem('isnad.gui.settings.v2', {json.dumps(json.dumps(settings))});"
-        f"window.localStorage.setItem('isnad.gui.theme.v1', {json.dumps(theme)});"
+        f"window.localStorage.setItem('isnad.gui.theme.v1', {json.dumps(json.dumps(theme))});"
+        f"window.localStorage.setItem('isnad.gui.lang.v1', {json.dumps(json.dumps(lang))});"
     )
     return context
 
 
-def _chat(context, base: str, page_path: Path) -> None:
+def _chat(context, base: str, page_path: Path, prompt: str = CHAT_PROMPT_AR) -> None:
     page = context.new_page()
     page.goto(base, wait_until="load")
     _wait_ready(page)
-    page.fill("#composerInput", CHAT_PROMPT)
-    page.click("#sendBtn")
+    page.fill("#composer-input", prompt)
+    page.click("#send-button")
     page.wait_for_function(
-        "() => document.querySelectorAll('.citation code').length === 2", timeout=60000
+        "() => document.querySelectorAll('.citation-slot .report-card').length === 2"
+        " && !document.querySelector('#stop-button')",
+        timeout=60000,
     )
     page.wait_for_timeout(500)
-    page.evaluate(
-        "() => { const el = document.querySelector('article.msg--assistant');"
-        " el.scrollIntoView({block:'start'}); window.scrollBy(0, -70); }"
-    )
+    page.evaluate("() => document.querySelector('.citation-slot').scrollIntoView({block:'start'})")
+    page.evaluate("() => document.querySelector('#transcript').scrollBy(0, -150)")
     page.wait_for_timeout(250)
     page.screenshot(path=str(page_path))
     page.close()
+
+
+def _pick(page, trigger: str, index: int) -> None:
+    page.click(trigger)
+    page.click(f"[role=option] >> nth={index}")
 
 
 def _verify(
@@ -127,28 +139,21 @@ def _verify(
     language: str,
     quote: str,
     reference: str,
-    # The resolved verdict is the one carrying the raw status code; waiting on it
-    # rather than on the panel means the shot always frames the finished report.
-    scroll_to: str = ".result__status code",
-    scroll_offset: int = -34,
 ) -> None:
     page = context.new_page()
     page.goto(base, wait_until="load")
     _wait_ready(page)
-    page.click("#modeVerify")
-    page.wait_for_selector("#verifyFields:not([hidden])")
-    page.select_option("#sourceSelect", source)
-    page.select_option("#languageSelect", language)
-    page.fill("#composerInput", quote)
-    page.fill("#referenceInput", reference)
-    page.click("#sendBtn")
-    page.wait_for_selector(scroll_to, timeout=45000)
+    page.click("#mode-verify")
+    _pick(page, "#verify-source", 0 if source == "quran" else 1)
+    _pick(page, "#verify-language", 0 if language == "ar" else 1)
+    page.fill("#composer-input", quote)
+    page.fill("#verify-reference", reference)
+    page.click("#send-button")
+    # The finished report, not the checking card, frames the shot.
+    page.wait_for_selector(".report-card", timeout=45000)
     page.wait_for_timeout(400)
-    page.evaluate(
-        "([sel, offset]) => { const el = document.querySelector(sel);"
-        " el.scrollIntoView({block:'start'}); window.scrollBy(0, offset); }",
-        [scroll_to, scroll_offset],
-    )
+    page.evaluate("() => document.querySelector('.report-card').scrollIntoView({block:'start'})")
+    page.evaluate("() => document.querySelector('#transcript').scrollBy(0, -24)")
     page.wait_for_timeout(250)
     page.screenshot(path=str(page_path))
     page.close()
@@ -180,7 +185,9 @@ def main() -> int:
                 # The hadith report is the longest one, so it is captured in a
                 # taller viewport framed from the result head: the status stays
                 # visible next to the source-supplied grade.
-                tall = _context(browser, theme="light", model_base=model_base, height=1150)
+                tall = _context(
+                    browser, theme="light", model_base=model_base, lang="en", height=1150
+                )
                 _verify(
                     tall,
                     base,
@@ -195,14 +202,30 @@ def main() -> int:
 
                 settings_page = light.new_page()
                 settings_page.goto(base, wait_until="load")
-                settings_page.wait_for_selector('#apiBadge[data-state="ready"]', timeout=20000)
-                settings_page.click("#settingsBtn")
-                settings_page.wait_for_selector("#settingsDialog[open]")
+                _wait_ready(settings_page)
+                settings_page.click("aside >> text=الإعدادات")
+                settings_page.wait_for_selector("#settings-dialog")
+                settings_page.click("#settings-dialog [role=tab] >> nth=2")
                 settings_page.wait_for_timeout(300)
-                settings_page.screenshot(path=str(OUTPUT / "05-settings-model.png"))
-                saved.append("05-settings-model.png")
+                settings_page.screenshot(path=str(OUTPUT / "05-settings-language.png"))
+                saved.append("05-settings-language.png")
                 settings_page.close()
+
+                # The dashboard reads this context's history: the checks above.
+                dash = light.new_page()
+                dash.goto(base + "dashboard/", wait_until="load")
+                _wait_ready(dash)
+                dash.wait_for_selector(".dash-hero", timeout=20000)
+                dash.wait_for_timeout(600)
+                dash.screenshot(path=str(OUTPUT / "07-dashboard.png"))
+                saved.append("07-dashboard.png")
+                dash.close()
                 light.close()
+
+                english = _context(browser, theme="light", model_base=model_base, lang="en")
+                _chat(english, base, OUTPUT / "08-chat-english.png", prompt=CHAT_PROMPT)
+                saved.append("08-chat-english.png")
+                english.close()
 
                 dark = _context(browser, theme="dark", model_base=model_base)
                 _chat(dark, base, OUTPUT / "02-chat-citation-dark.png")
@@ -215,12 +238,17 @@ def main() -> int:
                 page = narrow.new_page()
                 page.goto(base, wait_until="load")
                 _wait_ready(page)
-                page.fill("#composerInput", CHAT_PROMPT)
-                page.click("#sendBtn")
+                page.fill("#composer-input", CHAT_PROMPT_AR)
+                page.click("#send-button")
                 page.wait_for_function(
-                    "() => document.querySelectorAll('.citation code').length === 2", timeout=60000
+                    "() => document.querySelectorAll('.citation-slot .report-card').length === 2",
+                    timeout=60000,
                 )
                 page.wait_for_timeout(500)
+                page.evaluate(
+                    "() => document.querySelector('.citation-slot').scrollIntoView({block:'start'})"
+                )
+                page.wait_for_timeout(250)
                 page.screenshot(path=str(OUTPUT / "06-narrow-layout.png"))
                 saved.append("06-narrow-layout.png")
                 page.close()

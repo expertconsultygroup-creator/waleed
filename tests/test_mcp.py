@@ -56,6 +56,21 @@ async def test_mcp_tools_expose_shared_capabilities_and_verification_contract() 
             assert data["status"] == "exact_match"
             assert data["evidence"][0]["source_text"] == source_text
             assert data["evidence"][0]["grade_text"] is None
+
+            arabic = await client.call_tool(
+                "verify_citation",
+                {
+                    "source_type": "quran",
+                    "language": "ar",
+                    "quote": source_text,
+                    "reference": "1:1",
+                    "locale": "ar",
+                },
+            )
+            arabic_data = arabic.structured_content
+            assert arabic_data["status"] == data["status"]
+            assert arabic_data["explanation_key"] == data["explanation_key"]
+            assert arabic_data["explanation"] != data["explanation"]
     finally:
         engine.close()
 

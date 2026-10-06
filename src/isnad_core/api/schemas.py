@@ -39,6 +39,7 @@ class SourceMetadataResponse(BaseModel):
 
     source_id: str
     name: str
+    display_name: str
     url: str
     version: str
     license: str
@@ -85,6 +86,10 @@ class VerifyResponse(BaseModel):
     evidence: list[EvidenceResponse]
     wording_differences: list[WordingDifferenceResponse]
     explanation: str
+    explanation_key: str | None = Field(
+        default=None,
+        description="Stable catalog key for `explanation`; identical in every locale.",
+    )
     candidate_count: int | None
     evidence_truncated: bool
 
@@ -143,6 +148,7 @@ class SourceCapabilityResponse(BaseModel):
     language: str
     source_id: str
     name: str
+    display_name: str
     source_version: str
     normalization_profile: str
     mode: str
@@ -183,6 +189,14 @@ class SystemPromptResponse(BaseModel):
     block_close_marker: str
 
 
+class StatusDetailResponse(BaseModel):
+    """Localized label and meaning of one match status; the `status` value never changes."""
+
+    status: MatchStatus
+    label: str
+    meaning: str
+
+
 class CapabilitiesResponse(BaseModel):
     """Discoverable contract details for clients such as the user's GUI."""
 
@@ -190,7 +204,71 @@ class CapabilitiesResponse(BaseModel):
     service: str
     status_semantics: str
     statuses: list[MatchStatus]
+    status_details: list[StatusDetailResponse]
+    locales: list[str]
+    locale: str
     sources: list[SourceCapabilityResponse]
     limits: LimitsResponse
     streaming: StreamingContractResponse
     system_prompt_path: str
+    stats_enabled: bool
+
+
+class LatencyBucketResponse(BaseModel):
+    """Verifications whose latency fell in this bucket (non-cumulative).
+
+    `le_ms` is the inclusive upper bound in milliseconds; `null` is the open-ended
+    last bucket.
+    """
+
+    le_ms: int | None
+    count: int
+
+
+class LatencyResponse(BaseModel):
+    """Verification latency histogram with the sum and count for a mean."""
+
+    buckets: list[LatencyBucketResponse]
+    count: int
+    sum_ms: float
+    mean_ms: float | None
+
+
+class StatsBreakdownResponse(BaseModel):
+    """Verification count for one status, source type and language combination."""
+
+    status: MatchStatus
+    source_type: str
+    language: str
+    count: int
+
+
+class StatsDayResponse(BaseModel):
+    """One UTC calendar day of verification counts."""
+
+    date: str
+    total: int
+    by_status: dict[str, int]
+    source_unavailable_errors: int
+
+
+class StatsTotalsResponse(BaseModel):
+    """Totals since the counters were created (or loaded from the persistence file)."""
+
+    verifications: int
+    source_unavailable_errors: int
+    by_status: dict[str, int]
+
+
+class StatsResponse(BaseModel):
+    """Aggregate server counters. No quote text, reference, or client detail is stored."""
+
+    persistent: bool
+    started_at: str
+    collecting_since: str
+    uptime_seconds: float
+    window_days: int
+    totals: StatsTotalsResponse
+    breakdown: list[StatsBreakdownResponse]
+    latency: LatencyResponse
+    daily: list[StatsDayResponse]

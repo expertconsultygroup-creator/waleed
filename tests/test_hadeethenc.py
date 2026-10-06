@@ -129,6 +129,7 @@ def test_no_search_result_is_limited_to_hadeethenc_and_not_a_fabrication_claim()
     assert result.status is MatchStatus.NOT_FOUND_IN_CHECKED_CORPUS
     assert result.evidence == ()
     assert "fabricated or mawḍūʿ" in result.explanation
+    assert result.explanation_key == "hadith.not_found_in_checked_corpus"
 
 
 def test_truncated_search_with_no_candidates_does_not_claim_complete_absence() -> None:
@@ -158,6 +159,7 @@ def test_truncated_search_with_no_candidates_does_not_claim_complete_absence() -
     assert result.candidate_count is None
     assert "truncated HadeethEnc search" in result.explanation
     assert "fabricated or mawḍūʿ" in result.explanation
+    assert result.explanation_key == "hadith.not_found_search_truncated"
 
 
 def test_remote_outage_raises_source_unavailable_instead_of_not_found() -> None:
@@ -219,6 +221,7 @@ def test_cited_record_mismatch_includes_source_evidence() -> None:
     assert result.evidence[0].source_text == source_record["hadeeth"]
     assert result.wording_differences
     assert "authenticity" in result.explanation
+    assert result.explanation_key == "hadith.mismatch_at_cited_reference"
 
 
 def test_search_truncation_is_cached_and_never_claims_uniqueness() -> None:

@@ -24,6 +24,8 @@ from isnad_core.api.middleware import RequestBodyLimitMiddleware
 from isnad_core.api.model_proxy import (
     MAX_PROXY_BODY_BYTES,
     ModelProxyConfig,
+    RateLimiter,
+    client_identity,
     load_dotenv,
     prepare_upstream_body,
     stream_upstream,
@@ -223,6 +225,7 @@ def create_app(
     app.state.model_proxy = (
         model_proxy if model_proxy is not None else ModelProxyConfig.from_environment()
     )
+    app.state.model_rate_limiter = RateLimiter.from_environment()
     app.state.engine = engine if engine is not None else VerificationEngine()
     if stats_enabled is None:
         stats_enabled = _stats_enabled_from_environment()
@@ -430,6 +433,16 @@ def create_app(
                 code="model_not_configured",
                 message=render("error.model_not_configured", _request_locale(request)),
             )
+        fallback = request.client.host if request.client else "unknown"
+        if not app.state.model_rate_limiter.allow(client_identity(request.headers, fallback)):
+            response = _error_response(
+                request,
+                status_code=429,
+                code="model_rate_limited",
+                message=render("error.model_rate_limited", _request_locale(request)),
+            )
+            response.headers["Retry-After"] = "600"
+            return response
         try:
             body = prepare_upstream_body(await request.body(), config)
         except ValueError:

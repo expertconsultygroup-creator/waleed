@@ -12,13 +12,16 @@ Configuration (environment, or a ``.env`` file in the working directory):
 | ``ISNAD_MODEL_API_KEY`` (or ``NOVITA_API_KEY``) | unset: the proxy answers 503 |
 | ``ISNAD_MODEL_BASE_URL`` | ``https://api.novita.ai/openai/v1`` |
 | ``ISNAD_MODEL_NAME`` | ``zai-org/glm-5.3`` |
+| ``ISNAD_MODEL_RATE_LIMIT`` | ``40`` chat requests per client per hour (``0`` turns it off) |
 """
 
 from __future__ import annotations
 
 import json
 import os
-from collections.abc import AsyncIterator
+import time
+from collections import deque
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +30,7 @@ import httpx
 DEFAULT_MODEL_BASE_URL = "https://api.novita.ai/openai/v1"
 DEFAULT_MODEL_NAME = "zai-org/glm-5.3"
 MAX_PROXY_BODY_BYTES = 1024 * 1024
+DEFAULT_RATE_LIMIT_PER_HOUR = 40
 _UPSTREAM_TIMEOUT = httpx.Timeout(connect=15.0, read=300.0, write=30.0, pool=15.0)
 
 
@@ -63,6 +67,55 @@ class ModelProxyConfig:
         base_url = os.environ.get("ISNAD_MODEL_BASE_URL") or DEFAULT_MODEL_BASE_URL
         model = os.environ.get("ISNAD_MODEL_NAME") or DEFAULT_MODEL_NAME
         return cls(secret.strip(), base_url.rstrip("/"), model.strip())
+
+
+class RateLimiter:
+    """Sliding one-hour window per client, kept in memory.
+
+    The key is paid for by the deployment, so a public instance must not let one
+    visitor spend it without bound. Per process only: with several instances the
+    effective limit is the limit times the instance count.
+    """
+
+    def __init__(self, per_hour: int, *, window_seconds: float = 3600.0) -> None:
+        self.per_hour = per_hour
+        self.window_seconds = window_seconds
+        self._hits: dict[str, deque[float]] = {}
+
+    @classmethod
+    def from_environment(cls) -> RateLimiter:
+        raw = os.environ.get("ISNAD_MODEL_RATE_LIMIT", "").strip()
+        try:
+            per_hour = int(raw) if raw else DEFAULT_RATE_LIMIT_PER_HOUR
+        except ValueError:
+            per_hour = DEFAULT_RATE_LIMIT_PER_HOUR
+        return cls(max(0, per_hour))
+
+    def allow(self, client: str, now: float | None = None) -> bool:
+        if self.per_hour == 0:
+            return True
+        now = time.monotonic() if now is None else now
+        hits = self._hits.setdefault(client, deque())
+        while hits and now - hits[0] >= self.window_seconds:
+            hits.popleft()
+        if len(hits) >= self.per_hour:
+            return False
+        hits.append(now)
+        if len(self._hits) > 10_000:
+            self._hits = {key: value for key, value in self._hits.items() if value}
+        return True
+
+
+def client_identity(headers: Mapping[str, str], fallback: str) -> str:
+    """Return the caller's address, preferring the hop the platform appended.
+
+    Behind Cloud Run and other Google front ends the real client address is the
+    last ``X-Forwarded-For`` entry; earlier entries are whatever the client sent.
+    """
+
+    forwarded = headers.get("x-forwarded-for", "")
+    entries = [entry.strip() for entry in forwarded.split(",") if entry.strip()]
+    return entries[-1] if entries else fallback
 
 
 def prepare_upstream_body(raw: bytes, config: ModelProxyConfig) -> bytes:

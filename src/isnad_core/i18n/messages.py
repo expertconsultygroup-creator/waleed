@@ -427,6 +427,10 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "en": "Send an OpenAI-style chat request with a messages list.",
         "ar": "أرسل طلب محادثة بصيغة OpenAI يتضمن قائمة messages.",
     },
+    "error.model_rate_limited": {
+        "en": "Too many chat requests from this address; try again later.",
+        "ar": "طلبات محادثة كثيرة من هذا العنوان؛ حاول مرة أخرى لاحقًا.",
+    },
     "error.model_unreachable": {
         "en": "The model provider could not be reached.",
         "ar": "تعذّر الوصول إلى مزوِّد النموذج.",
